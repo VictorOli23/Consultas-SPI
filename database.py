@@ -13,7 +13,7 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    # Tabela de Regiões (Adicionada coluna DDD)
+    # Tabela de Regiões
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sites (
             sigla TEXT PRIMARY KEY,
@@ -27,7 +27,7 @@ def init_db():
             ie TEXT
         )
     ''')
-    # Tabela de Escala
+    # Tabela de Escala com coluna de Horário
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escala (
             id SERIAL PRIMARY KEY,
@@ -35,6 +35,7 @@ def init_db():
             tecnico TEXT,
             dia_mes INT,
             mes_ano TEXT,
+            horario TEXT,
             UNIQUE(ddd, tecnico, dia_mes, mes_ano)
         )
     ''')
@@ -53,8 +54,7 @@ def process_excel(file_path):
     conn = get_connection()
     cursor = conn.cursor()
     
-    # 1. Processar Aba de Sites/Localidades (Se houver aba chamada 'padrao' ou similar)
-    # Aqui mantemos a funcionalidade original de importar os dados técnicos das siglas
+    # 1. Processar Localidades (Aba 'padrao' ou similar)
     aba_sites = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df_sites = xl.parse(aba_sites).fillna('')
     for _, row in df_sites.iterrows():
@@ -64,7 +64,9 @@ def process_excel(file_path):
             INSERT INTO sites (sigla, localidade, nome_da_localidade, area, ddd, telefone, cx, tx, ie)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (sigla) DO UPDATE SET
-                nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, telefone=EXCLUDED.telefone
+                nome_da_localidade=EXCLUDED.nome_da_localidade, 
+                ddd=EXCLUDED.ddd, 
+                telefone=EXCLUDED.telefone
         """, (sigla, str(row.get('localidade','')), str(row.get('NomeDaLocalidade','')), 
               str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
               str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))))
@@ -80,12 +82,13 @@ def process_excel(file_path):
                 ON CONFLICT (nome) DO UPDATE SET telefone = EXCLUDED.telefone
             """, (nome, str(row.get('Telefone', '')).strip()))
 
-    # 3. Processar Escalas (Abas 12, 14, 15...)
+    # 3. Processar Escalas por DDD (Abas numéricas)
     mes_ano_atual = datetime.now().strftime('%m-%Y')
     ddd_sheets = [s for s in xl.sheet_names if s.isdigit()]
     
     for ddd in ddd_sheets:
         df = xl.parse(ddd).fillna('')
+        # Identifica colunas que são números de dias (1 a 31)
         colunas_dias = [c for c in df.columns if str(c).isdigit()]
         
         for _, row in df.iterrows():
@@ -93,13 +96,15 @@ def process_excel(file_path):
             if not tecnico: continue
             
             for dia in colunas_dias:
-                status = str(row[dia]).upper().strip()
-                if status == 'P':
+                valor_celula = str(row[dia]).strip()
+                # Salva se a célula não estiver vazia e não for apenas 'F' (Folga)
+                if valor_celula and valor_celula.upper() != 'F':
                     cursor.execute("""
-                        INSERT INTO escala (ddd, tecnico, dia_mes, mes_ano)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (ddd, tecnico, dia_mes, mes_ano) DO NOTHING
-                    """, (ddd, tecnico, int(dia), mes_ano_atual))
+                        INSERT INTO escala (ddd, tecnico, dia_mes, mes_ano, horario)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (ddd, tecnico, dia_mes, mes_ano) 
+                        DO UPDATE SET horario = EXCLUDED.horario
+                    """, (ddd, tecnico, int(dia), mes_ano_atual, valor_celula))
     
     conn.commit()
     conn.close()
@@ -115,7 +120,6 @@ def query_data(user_text):
     sites = cursor.fetchall()
     siglas_list = [s['sigla'] for s in sites]
     
-    # Busca Identificando a Sigla
     words = user_text.upper().replace('?', '').split()
     match_sigla = next((w for w in words if w in siglas_list), None)
     
@@ -126,9 +130,9 @@ def query_data(user_text):
     if match_sigla:
         site_data = next(item for item in sites if item["sigla"] == match_sigla)
         
-        # Busca técnico na escala + telefone
+        # Busca escala batendo DDD + Dia + Mês/Ano
         cursor.execute("""
-            SELECT e.tecnico, f.telefone
+            SELECT e.tecnico, e.horario, f.telefone
             FROM escala e
             LEFT JOIN funcionarios f ON e.tecnico = f.nome
             WHERE e.ddd = %s AND e.dia_mes = %s AND e.mes_ano = %s
@@ -137,19 +141,19 @@ def query_data(user_text):
         plantonistas = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>Terminal NetQuery</b><br><hr>"
+        res = f"📡 <b>NetQuery Terminal</b><br><hr>"
         res += f"📍 <b>Localidade:</b> {site_data['nome_da_localidade']} ({match_sigla})<br>"
-        res += f"🏢 <b>Área/DDD:</b> {site_data['area']} / {site_data['ddd']}<br>"
-        res += f"📞 <b>Contato Base:</b> {site_data['telefone']}<br><br>"
-        res += f"📅 <b>Escala de Plantão ({hoje.strftime('%d/%m')}):</b><br>"
+        res += f"🏢 <b>Área / DDD:</b> {site_data['area']} / {site_data['ddd']}<br><br>"
+        res += f"📅 <b>Escala para Hoje ({hoje.strftime('%d/%m')}):</b><br>"
         
         if plantonistas:
             for p in plantonistas:
                 res += f"👨‍🔧 <b>Técnico:</b> {p['tecnico']}<br>"
-                res += f"📱 <b>Celular:</b> <a href='tel:{p['telefone']}' style='color:#38bdf8'>{p['telefone']}</a><br>"
+                res += f"⏰ <b>Plantão/Turno:</b> {p['horario']}<br>"
+                res += f"📱 <b>Celular:</b> <a href='tel:{p['telefone']}' style='color:#38bdf8'>{p['telefone']}</a><br><br>"
         else:
-            res += "⚠️ <i>Nenhum plantonista escalado para este DDD hoje.</i>"
+            res += "⚠️ <i>Nenhum plantonista identificado para este DDD hoje.</i>"
         return res
 
     conn.close()
-    return "Não identifiquei a sigla. Tente algo como 'Quem atende SJC?'"
+    return "Sigla não encontrada. Ex: 'Quem está em SJC?'"
