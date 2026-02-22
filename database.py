@@ -7,13 +7,23 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Legenda completa baseada na sua planilha
+# Dicionário COMPLETO restaurado (incluindo o W)
 LEGENDA_HORARIOS = {
-    'Y': '07:00 as 22:11', 'D': '7:01 às 7:00', '1': '07:00 as 16:00', 
-    '2': '07:30 as 16:30', '3': '08:00 as 17:00', '4': '08:30 as 17:30', 
-    '5': '11:00 as 20:00', '6': '12:30 as 21:30', '7': '13:00 as 22:00', 
-    '8': '22:12 as 07:00', '14': '07:42 as 18:00', 'A': '7:01 ás 8:00', 
-    'B': '7:01 ás 17:30', 'G': '16:01 ás 7:00', 'K': '17:00 ás 7:00'
+    '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
+    '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
+    '7': '13:00 as 22:00', '8': '22:12 as 07:00', '9': '08:00 as 12:00 SABADO',
+    '10': '08:00 as 17:00 SABADO', '11': '09:00 as 13:00 SABADO', 
+    '12': '09:00 AS 18:00 SABADO', '13': '18:00 as 22:00 SABADO',
+    '14': '07:42 as 18:00', '15': '10:00 as 19:00',
+    'A': '7:01 ás 8:00', 'B': '7:01 ás 17:30', 'D': '7:01 ás 7:00',
+    'E': '16:01 ás 22:11', 'G': '16:01 ás 7:00', 'H': '16:31 ás 22:11',
+    'I': '16:31 ás 7:00', 'J': '17:00 ás 22:11', 'K': '17:00 ás 7:00',
+    'M': '17:31 ás 22:11', 'N': '17:31 ás 7:00', 'O': '20:01 ás 22:11',
+    'P': '20:01 ás 7:00', 'Q': '21:31 ás 22:11', 'R': '21:31 ás 7:11',
+    'S': '22:01 ás 7:00', 'T': '18:01 ás 7:00', 'U': '17:00:00 ás 8:00',
+    'V': '18:00 ÁS 8:00', 'W': '08:00 as 18:00', 'X': '22:01 ás 8:00', 
+    'Y': '07:00 as 22:11', 'Z': '21:31 ás 8:00', 'AA': '22:01 as 9:00',
+    'AB': '08:01 as 08:00', 'AC': '12:01 ás 07:00', 'AD': '22:00 as 03:00'
 }
 
 def get_connection():
@@ -22,45 +32,25 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
-        sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)''')
+    # Reset de segurança
+    cursor.execute("DROP TABLE IF EXISTS escala") 
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
-    
-    columns = ['ddd_aba', 'contato_corp', 'supervisor', 'cm', 'horario', 'dia_mes']
-    for col in columns:
-        cursor.execute(f"ALTER TABLE escala ADD COLUMN IF NOT EXISTS {col} TEXT")
-    
     conn.commit()
     conn.close()
 
 def process_excel_sites(file_path):
-    xl = pd.ExcelFile(file_path)
-    aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
-    df = xl.parse(aba).fillna('')
-    
-    header_idx = 0
-    for i, row in df.iterrows():
-        if any('Sigla' in str(v) for v in row.values):
-            header_idx = i
-            break
-            
-    df.columns = [str(c).strip() for c in df.iloc[header_idx]]
-    df = df.iloc[header_idx + 1:]
-    
+    df = pd.read_excel(file_path).fillna('')
     conn = get_connection()
     cursor = conn.cursor()
     for _, row in df.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
-        if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
-            nome = str(row.get('NomeDaLocalidade', '')).replace('nan', '').strip()
-            ddd = str(row.get('DDD', '')).replace('.0', '').replace('nan', '').strip()
-            cursor.execute("""
-                INSERT INTO sites (sigla, nome_da_localidade, ddd) 
-                VALUES (%s, %s, %s) 
-                ON CONFLICT (sigla) DO UPDATE SET ddd=EXCLUDED.ddd, nome_da_localidade=EXCLUDED.nome_da_localidade
-            """, (sigla, nome, ddd))
+        if sigla:
+            cursor.execute("INSERT INTO sites (sigla, nome_da_localidade, ddd) VALUES (%s, %s, %s) ON CONFLICT (sigla) DO UPDATE SET ddd=EXCLUDED.ddd",
+                           (sigla, str(row.get('NomeDaLocalidade')), str(row.get('DDD'))))
     conn.commit()
     conn.close()
 
@@ -69,15 +59,13 @@ def process_excel_escala(file_path):
     mes_ano = datetime.now().strftime('%m-%Y')
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE escala")
+    cursor.execute("DELETE FROM escala")
     
-    abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
-    
-    # DICIONÁRIO ANTI-DUPLICATAS (Isso resolve o seu erro do Acacio)
+    abas_alvo = [s for s in xl.sheet_names if any(char.isdigit() for char in s)]
     escala_limpa = {}
 
     for aba in abas_alvo:
-        df = xl.parse(aba).fillna('')
+        df = xl.parse(aba, dtype=str).fillna('')
         
         header_idx = None
         for i, row in df.iterrows():
@@ -129,22 +117,14 @@ def process_excel_escala(file_path):
                 if len(row_vals) > d_idx:
                     plantao_val = str(row_vals[d_idx]).strip().upper()
                     if plantao_val and plantao_val not in ['F', 'NAN', 'NONE', 'NULL', '', 'C', 'L', 'FE', 'FF']:
-                        
-                        # A CHAVE ÚNICA: Se o Excel tiver 2 Acacios no mesmo dia, ele salva apenas 1 e não quebra o sistema.
                         chave_unica = f"{aba}_{tec}_{d_limpo}_{mes_ano}"
-                        
                         escala_limpa[chave_unica] = (
                             str(aba).upper(), tec, contato, supervisor, cm, d_limpo, mes_ano, plantao_val
                         )
 
-    # Converte o dicionário sem duplicatas em uma lista para enviar ao banco
     all_rows = list(escala_limpa.values())
-
     if all_rows:
-        execute_values(cursor, """
-            INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario) 
-            VALUES %s
-        """, all_rows)
+        execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario) VALUES %s", all_rows)
     
     conn.commit()
     conn.close()
@@ -155,33 +135,42 @@ def query_data(user_text):
     hoje = datetime.now()
     dia_atual = str(hoje.day)
     
-    cursor.execute("SELECT sigla FROM sites")
-    siglas = [r['sigla'] for r in cursor.fetchall()]
+    cursor.execute("SELECT sigla, nome_da_localidade, ddd FROM sites")
+    sites_db = cursor.fetchall()
+    siglas = [r['sigla'] for r in sites_db]
     
     match = process.extractOne(user_text.upper(), siglas)[0] if process.extractOne(user_text.upper(), siglas)[1] > 80 else None
 
     if match:
-        cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
-        site = cursor.fetchone()
+        site = next((s for s in sites_db if s['sigla'] == match), None)
         
+        # Pega a primeira parte da sigla (ex: de "IVA.OD" tira só "IVA")
+        prefixo_cm = match.split('.')[0] if '.' in match else match[:3]
+        
+        # Agora o SQL filtra pelo DDD *E* pela coluna CM da planilha
         cursor.execute("""
             SELECT * FROM escala 
-            WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
-        """, (f"%{site['ddd']}%", dia_atual, hoje.strftime('%m-%Y')))
+            WHERE ddd_aba LIKE %s 
+            AND cm ILIKE %s
+            AND dia_mes = %s 
+            AND mes_ano = %s
+        """, (f"%{site['ddd']}%", f"{prefixo_cm}%", dia_atual, hoje.strftime('%m-%Y')))
         
         plantoes = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']}<br><br>"
+        res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
+        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | CM: {prefixo_cm}<br><br>"
         
         if plantoes:
             for p in plantoes:
-                h = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
-                res += f"👨‍🔧 {p['tecnico']} (<b>{h}</b>)<br>📞 {p['contato_corp']}<br>👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155;'>"
+                h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
+                res_html += f"👨‍🔧 {p['tecnico']} (<b>{h_fmt}</b>)<br>"
+                res_html += f"📞 {p['contato_corp']}<br>"
+                res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res += f"⚠️ Nenhum técnico com plantão ativo (Y/D/1...) encontrado para o dia {dia_atual} no DDD {site['ddd']}."
-        return res
+            res_html += f"⚠️ Nenhum técnico exclusivo da CM {prefixo_cm} de plantão hoje."
+        return res_html
     
     conn.close()
     return "Sigla não encontrada."
