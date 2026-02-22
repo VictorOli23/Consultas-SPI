@@ -7,7 +7,7 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Dicionário COMPLETO restaurado (incluindo o W)
+# Dicionário COMPLETO
 LEGENDA_HORARIOS = {
     '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
     '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
@@ -32,10 +32,12 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    # Reset de segurança
     cursor.execute("DROP TABLE IF EXISTS escala") 
     
-    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)''')
+    # Adicionada a coluna "area" na tabela de sites, pois ela costuma guardar o CM responsável
+    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
+        sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, area TEXT)''')
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
@@ -44,13 +46,32 @@ def init_db():
 
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
+    
+    header_idx = 0
+    for i, row in df.iterrows():
+        if any('Sigla' in str(v) for v in row.values):
+            header_idx = i
+            break
+            
+    df.columns = [str(c).strip() for c in df.iloc[header_idx]]
+    df = df.iloc[header_idx + 1:]
+    
     conn = get_connection()
     cursor = conn.cursor()
     for _, row in df.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
-        if sigla:
-            cursor.execute("INSERT INTO sites (sigla, nome_da_localidade, ddd) VALUES (%s, %s, %s) ON CONFLICT (sigla) DO UPDATE SET ddd=EXCLUDED.ddd",
-                           (sigla, str(row.get('NomeDaLocalidade')), str(row.get('DDD'))))
+        if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
+            nome = str(row.get('NomeDaLocalidade', '')).replace('nan', '').strip()
+            ddd = str(row.get('DDD', '')).replace('.0', '').replace('nan', '').strip()
+            # Pega a "Área" (que geralmente é o CM que atende, ex: ARC)
+            area = str(row.get('Area', '')).replace('nan', '').strip().upper()
+            
+            cursor.execute("""
+                INSERT INTO sites (sigla, nome_da_localidade, ddd, area) 
+                VALUES (%s, %s, %s, %s) 
+                ON CONFLICT (sigla) DO UPDATE SET 
+                ddd=EXCLUDED.ddd, nome_da_localidade=EXCLUDED.nome_da_localidade, area=EXCLUDED.area
+            """, (sigla, nome, ddd, area))
     conn.commit()
     conn.close()
 
@@ -111,7 +132,7 @@ def process_excel_escala(file_path):
             
             contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
-            cm = str(row_vals[cm_idx]).replace('nan', '').strip() if cm_idx != -1 and len(row_vals) > cm_idx else ''
+            cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
             
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
@@ -135,7 +156,8 @@ def query_data(user_text):
     hoje = datetime.now()
     dia_atual = str(hoje.day)
     
-    cursor.execute("SELECT sigla, nome_da_localidade, ddd FROM sites")
+    # Busca incluindo a coluna 'area' que criamos
+    cursor.execute("SELECT sigla, nome_da_localidade, ddd, area FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
     
@@ -144,23 +166,36 @@ def query_data(user_text):
     if match:
         site = next((s for s in sites_db if s['sigla'] == match), None)
         
-        # Pega a primeira parte da sigla (ex: de "IVA.OD" tira só "IVA")
-        prefixo_cm = match.split('.')[0] if '.' in match else match[:3]
+        # LÓGICA DE BUSCA APRIMORADA:
+        # Se a "Area" do site estiver preenchida (ex: ARC), busca por ela na coluna CM da escala.
+        # Caso contrário, usa as 3 primeiras letras da sigla (como PNI ou IVA) como fallback.
+        cm_busca = site['area'] if site['area'] else match[:3]
         
-        # Agora o SQL filtra pelo DDD *E* pela coluna CM da planilha
         cursor.execute("""
             SELECT * FROM escala 
             WHERE ddd_aba LIKE %s 
             AND cm ILIKE %s
             AND dia_mes = %s 
             AND mes_ano = %s
-        """, (f"%{site['ddd']}%", f"{prefixo_cm}%", dia_atual, hoje.strftime('%m-%Y')))
+        """, (f"%{site['ddd']}%", f"%{cm_busca}%", dia_atual, hoje.strftime('%m-%Y')))
         
         plantoes = cursor.fetchall()
+        
+        # SE NÃO ENCONTRAR NINGUÉM usando o filtro restrito de CM, 
+        # ele faz uma "Busca de Segurança" retornando TODOS os técnicos do DDD daquela área
+        if not plantoes:
+            cursor.execute("""
+                SELECT * FROM escala 
+                WHERE ddd_aba LIKE %s 
+                AND dia_mes = %s 
+                AND mes_ano = %s
+            """, (f"%{site['ddd']}%", dia_atual, hoje.strftime('%m-%Y')))
+            plantoes = cursor.fetchall()
+
         conn.close()
 
         res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | CM: {prefixo_cm}<br><br>"
+        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | Base/CM: {cm_busca}<br><br>"
         
         if plantoes:
             for p in plantoes:
@@ -169,7 +204,7 @@ def query_data(user_text):
                 res_html += f"📞 {p['contato_corp']}<br>"
                 res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res_html += f"⚠️ Nenhum técnico exclusivo da CM {prefixo_cm} de plantão hoje."
+            res_html += f"⚠️ Nenhum técnico de plantão no DDD {site['ddd']} hoje."
         return res_html
     
     conn.close()
