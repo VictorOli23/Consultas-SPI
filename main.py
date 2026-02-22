@@ -29,6 +29,7 @@ async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 # Rota Health Check para o UptimeRobot (Monitorização)
+@app.head("/ping")
 @app.get("/ping")
 async def health_check():
     return {"status": "Sistema Operacional e Rodando!"}
