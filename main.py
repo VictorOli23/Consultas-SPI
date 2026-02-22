@@ -72,3 +72,4 @@ async def upload_file(request: Request, tipo: str, file: UploadFile = File(...))
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
+
