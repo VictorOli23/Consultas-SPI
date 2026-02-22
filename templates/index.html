@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,7 +23,7 @@
         .login-btn:hover { background: #0ea5e9; color: #fff; box-shadow: 0 0 15px rgba(14, 165, 233, 0.4); }
         
         .chat-container { width: 100%; max-width: 800px; background: var(--chat-bg); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; height: 75vh; overflow: hidden; }
-        .chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+        .chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
         .chat-box::-webkit-scrollbar { width: 6px; }
         .chat-box::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
         
@@ -32,14 +32,28 @@
         .message.system b { color: #38bdf8; }
         .message.user { background: var(--user-bubble); color: white; align-self: flex-end; border-bottom-right-radius: 2px; box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3); }
         
+        /* Botões de Ação Rápida (Chips) */
+        .quick-actions { display: flex; gap: 10px; padding: 12px 20px; overflow-x: auto; background: rgba(15, 23, 42, 0.6); border-top: 1px solid rgba(255,255,255,0.05); white-space: nowrap; }
+        .quick-actions::-webkit-scrollbar { height: 4px; }
+        .quick-actions::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .chip { background: rgba(14, 165, 233, 0.1); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3); padding: 8px 14px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 5px; }
+        .chip:hover { background: rgba(14, 165, 233, 0.3); color: #fff; transform: translateY(-2px); }
+
         .input-area { padding: 15px 20px; background: rgba(15, 23, 42, 0.8); border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 10px; }
         input[type="text"] { flex: 1; padding: 12px 16px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid #334155; border-radius: 8px; outline: none; transition: all 0.3s; }
         input[type="text"]:focus { border-color: #0ea5e9; box-shadow: 0 0 8px rgba(14, 165, 233, 0.3); }
         input[type="text"]::placeholder { color: #64748b; }
         
-        button { background: #0ea5e9; color: white; border: none; padding: 0 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.3s; display: flex; align-items: center; gap: 5px; }
-        button:hover { background: #0284c7; box-shadow: 0 0 12px rgba(14, 165, 233, 0.5); }
+        button.btn-send { background: #0ea5e9; color: white; border: none; padding: 0 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.3s; display: flex; align-items: center; gap: 5px; }
+        button.btn-send:hover { background: #0284c7; box-shadow: 0 0 12px rgba(14, 165, 233, 0.5); }
         
+        /* Animação a digitar... */
+        .typing-dots { display: flex; gap: 5px; align-items: center; height: 20px; padding: 0 5px; }
+        .dot { width: 8px; height: 8px; background: #38bdf8; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @media (max-width: 600px) { .header h1 { font-size: 1.2rem; } .chat-container { height: 85vh; } }
     </style>
@@ -52,11 +66,18 @@
     
     <div class="chat-container">
         <div class="chat-box" id="chatBox">
-            <div class="message system">Terminal de Consulta de Redes ativado. 🌐<br><br>Informe a sigla, cidade ou rota desejada (Ex: "Qual a região da sigla X?" ou "Quem atende SJC.NH?").</div>
+            <div class="message system">Terminal de Consulta de Redes ativado. 🌐<br><br>Informe a sigla, cidade ou rota desejada.</div>
         </div>
+        
+        <div class="quick-actions">
+            <button class="chip" onclick="sendQuickAction('Quem atende a sigla SJC?')">📍 Sigla SJC</button>
+            <button class="chip" onclick="sendQuickAction('Qual a região de Campinas?')">🏢 Região Campinas</button>
+            <button class="chip" onclick="sendQuickAction('Siglas de São Paulo')">🗺️ Cidades de SP</button>
+        </div>
+
         <div class="input-area">
             <input type="text" id="userInput" placeholder="Insira o parâmetro de busca..." onkeypress="handleKeyPress(event)" autocomplete="off">
-            <button onclick="sendMessage()">Processar</button>
+            <button class="btn-send" onclick="sendMessage()">Processar</button>
         </div>
     </div>
 
@@ -70,14 +91,25 @@
             msgDiv.innerHTML = text;
             chatBox.appendChild(msgDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
+            return msgDiv; // Retorna o elemento para podermos apagá-lo depois (útil para o typing)
+        }
+
+        // Função para os botões rápidos
+        function sendQuickAction(text) {
+            userInput.value = text;
+            sendMessage();
         }
 
         async function sendMessage() {
             const text = userInput.value.trim();
             if (!text) return;
             
+            // 1. Mostra a mensagem do utilizador
             addMessage(text, "user");
             userInput.value = "";
+            
+            // 2. Mostra a animação de "a digitar..."
+            const typingIndicator = addMessage('<div class="typing-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>', "system");
             
             try {
                 const response = await fetch('/query', {
@@ -86,9 +118,13 @@
                     body: JSON.stringify({ question: text })
                 });
                 const data = await response.json();
+                
+                // 3. Remove a animação e mostra a resposta real
+                chatBox.removeChild(typingIndicator);
                 addMessage(data.answer, "system");
             } catch (error) {
-                addMessage("Erro de conexão com o banco de dados principal.", "system");
+                chatBox.removeChild(typingIndicator);
+                addMessage("Erro de ligação à base de dados principal.", "system");
             }
         }
 
