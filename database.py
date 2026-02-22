@@ -28,7 +28,6 @@ def init_db():
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
     
-    # Garante que não faltam colunas no banco
     columns = ['ddd_aba', 'contato_corp', 'supervisor', 'cm', 'horario', 'dia_mes']
     for col in columns:
         cursor.execute(f"ALTER TABLE escala ADD COLUMN IF NOT EXISTS {col} TEXT")
@@ -41,7 +40,6 @@ def process_excel_sites(file_path):
     aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df = xl.parse(aba).fillna('')
     
-    # Proteção para o cabeçalho de Sites
     header_idx = 0
     for i, row in df.iterrows():
         if any('Sigla' in str(v) for v in row.values):
@@ -71,15 +69,16 @@ def process_excel_escala(file_path):
     mes_ano = datetime.now().strftime('%m-%Y')
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE escala") # Limpa dados antigos
+    cursor.execute("TRUNCATE TABLE escala")
     
     abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
-    all_rows = []
+    
+    # DICIONÁRIO ANTI-DUPLICATAS (Isso resolve o seu erro do Acacio)
+    escala_limpa = {}
 
     for aba in abas_alvo:
         df = xl.parse(aba).fillna('')
         
-        # 1. Encontra a linha de cabeçalho com segurança
         header_idx = None
         for i, row in df.iterrows():
             if any('Funcionários' in str(v).strip() for v in row.values):
@@ -91,7 +90,6 @@ def process_excel_escala(file_path):
         header_row = df.iloc[header_idx].values
         df_dados = df.iloc[header_idx + 1:]
         
-        # 2. Mapeamento por ÍNDICE (Evita o erro de "float")
         tec_idx, contato_idx, sup_idx, cm_idx = -1, -1, -1, -1
         dias_idx_map = {}
         
@@ -102,7 +100,6 @@ def process_excel_escala(file_path):
             elif 'Superv' in v_str: sup_idx = i
             elif 'CM' == v_str.upper(): cm_idx = i
             else:
-                # Transforma qualquer formato de data maluca em número limpo (ex: "22/", "22.0", Timestamp)
                 dia_limpo = None
                 if isinstance(val, (datetime, pd.Timestamp)):
                     dia_limpo = str(val.day)
@@ -117,7 +114,6 @@ def process_excel_escala(file_path):
                 if dia_limpo:
                     dias_idx_map[i] = dia_limpo
 
-        # 3. Leitura segura das linhas
         for _, row in df_dados.iterrows():
             row_vals = row.values
             if tec_idx == -1 or len(row_vals) <= tec_idx: continue
@@ -125,7 +121,6 @@ def process_excel_escala(file_path):
             tec = str(row_vals[tec_idx]).strip()
             if not tec or tec.lower() in ['nan', 'none', '', 'funcionários']: continue
             
-            # Pega as outras colunas usando o índice da coluna
             contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip() if cm_idx != -1 and len(row_vals) > cm_idx else ''
@@ -133,11 +128,17 @@ def process_excel_escala(file_path):
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
                     plantao_val = str(row_vals[d_idx]).strip().upper()
-                    # Salva somente quem não estiver de Folga
                     if plantao_val and plantao_val not in ['F', 'NAN', 'NONE', 'NULL', '', 'C', 'L', 'FE', 'FF']:
-                        all_rows.append((
+                        
+                        # A CHAVE ÚNICA: Se o Excel tiver 2 Acacios no mesmo dia, ele salva apenas 1 e não quebra o sistema.
+                        chave_unica = f"{aba}_{tec}_{d_limpo}_{mes_ano}"
+                        
+                        escala_limpa[chave_unica] = (
                             str(aba).upper(), tec, contato, supervisor, cm, d_limpo, mes_ano, plantao_val
-                        ))
+                        )
+
+    # Converte o dicionário sem duplicatas em uma lista para enviar ao banco
+    all_rows = list(escala_limpa.values())
 
     if all_rows:
         execute_values(cursor, """
@@ -152,7 +153,7 @@ def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
-    dia_atual = str(hoje.day) # Exatamente o mesmo formato mapeado acima (Ex: "22")
+    dia_atual = str(hoje.day)
     
     cursor.execute("SELECT sigla FROM sites")
     siglas = [r['sigla'] for r in cursor.fetchall()]
@@ -163,7 +164,6 @@ def query_data(user_text):
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
         site = cursor.fetchone()
         
-        # O Match perfeito: busca o DDD 15 na aba e o dia 22 na tabela limpa
         cursor.execute("""
             SELECT * FROM escala 
             WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
