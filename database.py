@@ -7,7 +7,7 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Legenda completa restaurada (com o W)
+# Dicionário COMPLETO restaurado (incluindo o W)
 LEGENDA_HORARIOS = {
     '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
     '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
@@ -32,12 +32,21 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS escala") 
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
-        sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, area TEXT)''')
+        sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)''')
+        
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
+    
+    # Coluna nova para mapear o CM da cidade baseado na coluna CX da planilha de sites
+    cursor.execute("ALTER TABLE sites ADD COLUMN IF NOT EXISTS cm_responsavel TEXT")
+    
+    columns_escala = ['ddd_aba', 'contato_corp', 'supervisor', 'cm', 'horario', 'dia_mes', 'segmento']
+    for col in columns_escala:
+        cursor.execute(f"ALTER TABLE escala ADD COLUMN IF NOT EXISTS {col} TEXT")
+    
     conn.commit()
     conn.close()
 
@@ -55,11 +64,12 @@ def process_excel_sites(file_path):
     df.columns = [str(c).strip().upper() for c in df.iloc[header_idx]]
     df = df.iloc[header_idx + 1:]
     
-    # Mapeia colunas idependente do nome exato
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     col_nome = next((c for c in df.columns if 'NOME' in c or 'LOCAL' in c), None)
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
-    col_area = next((c for c in df.columns if c in ['AREA', 'ÁREA', 'CM', 'BASE']), None)
+    # A MÁGICA ESTÁ AQUI: Vai ler a coluna CX para saber quem é o dono do Site
+    col_cx = next((c for c in df.columns if c == 'CX'), None)
+    col_tx = next((c for c in df.columns if c == 'TX'), None)
     
     conn = get_connection()
     cursor = conn.cursor()
@@ -69,14 +79,20 @@ def process_excel_sites(file_path):
         if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
             nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
             ddd = str(row.get(col_ddd, '')).replace('.0', '').replace('nan', '').strip() if col_ddd else ''
-            area = str(row.get(col_area, '')).replace('nan', '').strip().upper() if col_area else ''
+            
+            # Pega o CM responsável olhando a coluna CX, se estiver vazia olha a TX
+            cm_resp = ''
+            if col_cx:
+                cm_resp = str(row.get(col_cx, '')).replace('nan', '').strip().upper()
+            if not cm_resp and col_tx:
+                cm_resp = str(row.get(col_tx, '')).replace('nan', '').strip().upper()
             
             cursor.execute("""
-                INSERT INTO sites (sigla, nome_da_localidade, ddd, area) 
+                INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) 
                 VALUES (%s, %s, %s, %s) 
                 ON CONFLICT (sigla) DO UPDATE SET 
-                ddd=EXCLUDED.ddd, nome_da_localidade=EXCLUDED.nome_da_localidade, area=EXCLUDED.area
-            """, (sigla, nome, ddd, area))
+                ddd=EXCLUDED.ddd, nome_da_localidade=EXCLUDED.nome_da_localidade, cm_responsavel=EXCLUDED.cm_responsavel
+            """, (sigla, nome, ddd, cm_resp))
     conn.commit()
     conn.close()
 
@@ -166,7 +182,7 @@ def query_data(user_text):
     hoje = datetime.now()
     dia_atual = str(hoje.day)
     
-    cursor.execute("SELECT sigla, nome_da_localidade, ddd, area FROM sites")
+    cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
     
@@ -175,8 +191,8 @@ def query_data(user_text):
     if match:
         site = next((s for s in sites_db if s['sigla'] == match), None)
         
-        # O CM buscado será a "Área" (se preenchida na planilha de sites) ou as 3 primeiras letras
-        cm_busca = site['area'] if site['area'] else match[:3]
+        # O CM buscado será a coluna CX (ex: ARC). Se for vazio, usa os 3 primeiros caracteres da sigla (ex: IVA)
+        cm_busca = site['cm_responsavel'] if site.get('cm_responsavel') else match[:3]
         
         # Filtro Rigoroso: Busca APENAS técnicos que pertencem a este CM
         cursor.execute("""
@@ -191,17 +207,21 @@ def query_data(user_text):
         conn.close()
 
         res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | CM: {cm_busca}<br><br>"
+        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | Base: {cm_busca}<br><br>"
         
         if plantoes:
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 res_html += f"👨‍🔧 {p['tecnico']} (<b>{h_fmt}</b>)<br>"
-                res_html += f"⚙️ Atuação: {p['segmento']}<br>"
-                res_html += f"📞 {p['contato_corp']}<br>"
+                
+                # Só exibe o segmento se ele existir na planilha
+                if p['segmento'] != 'Não especificado':
+                    res_html += f"⚙️ Atuação: {p['segmento']}<br>"
+                    
+                res_html += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
                 res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res_html += f"⚠️ Nenhum técnico exclusivo da área <b>{cm_busca}</b> de plantão hoje.<br><small><i>Se este site pertence a outro CM, atualize a coluna 'Area' na planilha de Sites.</i></small>"
+            res_html += f"⚠️ Nenhum técnico exclusivo da área <b>{cm_busca}</b> de plantão hoje."
         return res_html
     
     conn.close()
