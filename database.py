@@ -36,24 +36,25 @@ def init_db():
             ddd_aba TEXT, 
             tecnico TEXT, 
             dia_mes INT, 
-            mes_ano TEXT, 
-            horario TEXT,
-            UNIQUE(ddd_aba, tecnico, dia_mes, mes_ano)
+            mes_ano TEXT
         )
     ''')
     
-    # MIGRAÇÃO: Garante que as novas colunas existem no banco do Render
+    # --- MIGRAÇÕES: Força a criação de todas as colunas necessárias ---
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS contato_corp TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS supervisor TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS cm TEXT")
+    cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS horario TEXT")
     
-    # 3. Tabela de Funcionários
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS funcionarios (
-            nome TEXT PRIMARY KEY, 
-            telefone TEXT
-        )
-    ''')
+    # Garante a restrição de unicidade para evitar erros de ON CONFLICT
+    cursor.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unique_escala_registro') THEN
+                ALTER TABLE escala ADD CONSTRAINT unique_escala_registro UNIQUE(ddd_aba, tecnico, dia_mes, mes_ano);
+            END IF;
+        END $$;
+    """)
     
     conn.commit()
     conn.close()
@@ -63,22 +64,16 @@ def process_excel_sites(file_path):
     aba_sites = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df = xl.parse(aba_sites).fillna('')
     
-    # BLOQUEIO DE DUPLICADOS: Usa dicionário para filtrar siglas repetidas na planilha
+    # Remove duplicados da planilha antes de enviar ao banco
     sites_unicos = {}
     for _, row in df.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
         if not sigla: continue
         
         sites_unicos[sigla] = (
-            sigla, 
-            str(row.get('NomeDaLocalidade','')), 
-            str(row.get('localidade','')),
-            str(row.get('Area','')), 
-            str(row.get('DDD','')), 
-            str(row.get('Telefone','')),
-            str(row.get('CX','')), 
-            str(row.get('TX','')), 
-            str(row.get('IE',''))
+            sigla, str(row.get('NomeDaLocalidade','')), str(row.get('localidade','')),
+            str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
+            str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))
         )
     
     data_list = list(sites_unicos.values())
@@ -88,16 +83,8 @@ def process_excel_sites(file_path):
         cursor = conn.cursor()
         query = """
             INSERT INTO sites (sigla, nome_da_localidade, localidade, area, ddd, telefone, cx, tx, ie)
-            VALUES %s 
-            ON CONFLICT (sigla) DO UPDATE SET 
-                nome_da_localidade=EXCLUDED.nome_da_localidade, 
-                ddd=EXCLUDED.ddd, 
-                area=EXCLUDED.area,
-                localidade=EXCLUDED.localidade,
-                telefone=EXCLUDED.telefone,
-                cx=EXCLUDED.cx,
-                tx=EXCLUDED.tx,
-                ie=EXCLUDED.ie
+            VALUES %s ON CONFLICT (sigla) DO UPDATE SET 
+            nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, area=EXCLUDED.area
         """
         execute_values(cursor, query, data_list)
         conn.commit()
@@ -109,18 +96,15 @@ def process_excel_escala(file_path):
     
     conn = get_connection()
     cursor = conn.cursor()
-    # Limpa a escala para evitar conflitos de meses anteriores
-    cursor.execute("TRUNCATE TABLE escala") 
+    cursor.execute("TRUNCATE TABLE escala") # Limpa a escala antiga instantaneamente
     
-    # Filtro de abas que contêm DDD ou nomes específicos
     abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
-    
-    escala_limpa = {} # Chave: (aba, tecnico, dia) para evitar duplicados no mesmo arquivo
+    escala_limpa = {} 
 
     for aba in abas_alvo:
         df = xl.parse(aba).fillna('')
         
-        # Localiza o cabeçalho real 'Funcionários'
+        # Localiza o cabeçalho 'Funcionários'
         header_row_idx = None
         for i, row in df.iterrows():
             if 'Funcionários' in row.values:
@@ -144,11 +128,9 @@ def process_excel_escala(file_path):
             for dia in col_dias:
                 valor = str(row[dia]).strip()
                 if valor and valor.upper() != 'F':
-                    # Chave única para evitar o erro de ON CONFLICT no lote
+                    # Evita duplicatas no mesmo lote de inserção
                     chave = (aba, tec, int(dia), mes_ano)
-                    escala_limpa[chave] = (
-                        aba, tec, contato, supervisor, cm, int(dia), mes_ano, valor
-                    )
+                    escala_limpa[chave] = (aba, tec, contato, supervisor, cm, int(dia), mes_ano, valor)
 
     data_to_insert = list(escala_limpa.values())
 
@@ -180,28 +162,27 @@ def query_data(user_text):
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
         site = cursor.fetchone()
         
-        # Busca escala batendo DDD + Dia de Hoje
         cursor.execute("""
             SELECT tecnico, contato_corp, supervisor, cm, horario 
             FROM escala 
             WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
         """, (f"%{site['ddd']}%", hoje.day, hoje.strftime('%m-%Y')))
         
-        plantonistas = cursor.fetchall()
+        plantoes = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res += f"🏢 DDD: {site['ddd']} | Dia: {hoje.strftime('%d/%m')}<br><br>"
+        res = f"📡 <b>Terminal NetQuery</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
+        res += f"📅 Plantão de Hoje: {hoje.strftime('%d/%m')}<br><br>"
         
-        if plantonistas:
+        if plantoes:
             for p in plantonistas:
                 res += f"👨‍🔧 {p['tecnico']} (<b>{p['horario']}</b>)<br>"
                 res += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
                 res += f"👤 Sup: {p['supervisor']}<br>"
                 res += f"🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res += "⚠️ Nenhuma escala de plantão encontrada para hoje nesta região."
+            res += "⚠️ Sem escala encontrada para hoje."
         return res
     
     conn.close()
-    return "Sigla não encontrada. Exemplo: 'Plantão SJC?'"
+    return "Sigla não encontrada."
