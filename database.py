@@ -7,7 +7,7 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Dicionário de Legenda extraído das suas imagens
+# Legenda completa baseada na sua foto
 LEGENDA_HORARIOS = {
     '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
     '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
@@ -41,14 +41,17 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escala (
             id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, 
-            dia_mes INT, mes_ano TEXT, UNIQUE(ddd_aba, tecnico, dia_mes, mes_ano)
+            contato_corp TEXT, supervisor TEXT, cm TEXT, 
+            dia_mes INT, mes_ano TEXT, horario TEXT
         )
     ''')
-    # Migrações forçadas de colunas
+    # Migrações essenciais
+    cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS ddd_aba TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS contato_corp TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS supervisor TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS cm TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS horario TEXT")
+    
     conn.commit()
     conn.close()
 
@@ -56,12 +59,15 @@ def process_excel_sites(file_path):
     xl = pd.ExcelFile(file_path)
     aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df = xl.parse(aba).fillna('')
-    sites_unicos = {str(row.get('Sigla', '')).strip().upper(): (
-        str(row.get('Sigla', '')).strip().upper(), str(row.get('NomeDaLocalidade','')), 
-        str(row.get('localidade','')), str(row.get('Area','')), str(row.get('DDD','')), 
-        str(row.get('Telefone','')), str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))
-    ) for _, row in df.iterrows() if str(row.get('Sigla', '')).strip()}
-    
+    sites_unicos = {}
+    for _, row in df.iterrows():
+        sigla = str(row.get('Sigla', '')).strip().upper()
+        if not sigla: continue
+        sites_unicos[sigla] = (
+            sigla, str(row.get('NomeDaLocalidade','')), str(row.get('localidade','')),
+            str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
+            str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))
+        )
     if sites_unicos:
         conn = get_connection()
         cursor = conn.cursor()
@@ -79,37 +85,54 @@ def process_excel_escala(file_path):
     cursor = conn.cursor()
     cursor.execute("TRUNCATE TABLE escala")
     
-    abas = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
-    escala_data = {}
+    # Busca todas as abas que tem números de DDD no nome
+    abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
+    all_data = []
 
-    for aba in abas:
+    for aba in abas_alvo:
         df = xl.parse(aba).fillna('')
-        idx = next((i for i, r in df.iterrows() if 'Funcionários' in r.values), None)
-        if idx is not None:
-            df.columns = df.iloc[idx]; df = df.iloc[idx+1:]
         
-        col_dias = [c for c in df.columns if str(c).replace('.0','').isdigit()]
+        # Achar a linha onde o cabeçalho "Funcionários" existe
+        idx = None
+        for i, row in df.iterrows():
+            if 'Funcionários' in [str(v).strip() for v in row.values]:
+                idx = i
+                break
+        
+        if idx is not None:
+            df.columns = [str(c).strip() for c in df.iloc[idx]]
+            df = df.iloc[idx+1:]
+        
+        # Limpar nomes de colunas que são dias (remover .0 se existir)
+        def clean_day(c):
+            s = str(c).split('.')[0]
+            return s if s.isdigit() else s
+        
+        df.columns = [clean_day(c) for c in df.columns]
+        col_dias = [c for c in df.columns if c.isdigit()]
         
         for _, row in df.iterrows():
             tec = str(row.get('Funcionários', '')).strip()
-            if not tec or tec.lower() in ['nan', 'funcionários']: continue
+            if not tec or tec.lower() in ['nan', 'funcionários', '']: continue
             
-            for dia_col in col_dias:
-                valor = str(row[dia_col]).strip().upper()
+            contato = str(row.get('ContatoCorp.', '')).strip()
+            supervisor = str(row.get('Supervisor', '')).strip()
+            cm = str(row.get('CM', '')).strip()
+            
+            for dia in col_dias:
+                valor = str(row[dia]).strip().upper()
+                # Não salva células vazias ou NAN
                 if valor and valor != 'NAN':
-                    dia_limpo = int(float(str(dia_col)))
-                    chave = (aba, tec, dia_limpo, mes_ano)
-                    escala_data[chave] = (
-                        aba, tec, str(row.get('ContatoCorp.', '')),
-                        str(row.get('Supervisor', '')), str(row.get('CM', '')),
-                        dia_limpo, mes_ano, valor
-                    )
+                    all_data.append((
+                        aba, tec, contato, supervisor, cm, int(dia), mes_ano, valor
+                    ))
 
-    if escala_data:
+    if all_data:
         execute_values(cursor, """
             INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario)
             VALUES %s
-        """, list(escala_data.values()))
+        """, all_data)
+        
     conn.commit()
     conn.close()
 
@@ -117,6 +140,8 @@ def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
+    dia_hoje = hoje.day
+    mes_ano_hoje = hoje.strftime('%m-%Y')
     
     cursor.execute("SELECT sigla FROM sites")
     siglas = [r['sigla'] for r in cursor.fetchall()]
@@ -131,29 +156,30 @@ def query_data(user_text):
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
         s = cursor.fetchone()
         
-        # Busca por todos os técnicos daquela região (DDD) que não estão de folga
+        # BUSCA REFORÇADA: Busca por ddd simples ou nomes compostos na aba
         cursor.execute("""
             SELECT tecnico, contato_corp, supervisor, cm, horario 
             FROM escala 
-            WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
-            AND horario NOT IN ('F', 'C', 'L', 'FE', 'FF')
-        """, (f"%{s['ddd']}%", hoje.day, hoje.strftime('%m-%Y')))
+            WHERE (ddd_aba ILIKE %s OR ddd_aba ILIKE %s)
+            AND dia_mes = %s AND mes_ano = %s
+            AND horario NOT IN ('F', 'C', 'L', 'FE', 'FF', '', 'NAN')
+        """, (f"%{s['ddd']}%", f"%{s['area']}%", dia_hoje, mes_ano_hoje))
         
         plantoes = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{s['nome_da_localidade']} ({match})</b><br>"
-        res += f"🏢 DDD: {s['ddd']} | Dia: {hoje.strftime('%d/%m')}<br><br>"
+        res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{s['nome_da_localidade']} ({match})</b><br>"
+        res_html += f"🏢 DDD: {s['ddd']} | Dia: {hoje.strftime('%d/%m')}<br><br>"
         
         if plantoes:
             for p in plantoes:
-                h_extenso = LEGENDA_HORARIOS.get(p['horario'], p['horario'])
-                res += f"👨‍🔧 {p['tecnico']} (<b>{h_extenso}</b>)<br>"
-                res += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
-                res += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
+                h_extenso = LEGENDA_HORARIOS.get(p['horario'], f"Código: {p['horario']}")
+                res_html += f"👨‍🔧 {p['tecnico']} (<b>{h_extenso}</b>)<br>"
+                res_html += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
+                res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res += f"⚠️ <b>Atenção:</b> Nenhum técnico de plantão no DDD {s['ddd']} para hoje."
-        return res
+            res_html += f"⚠️ <b>Atenção:</b> Nenhum plantonista ativo para o DDD {s['ddd']} no dia {dia_hoje}/{hoje.month}. Verifique se a escala foi carregada corretamente."
+        return res_html
     
     conn.close()
-    return "Sigla não encontrada."
+    return "Sigla não encontrada. Ex: 'Quem atende IVA?'"
