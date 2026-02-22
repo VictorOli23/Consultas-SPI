@@ -2,6 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Admin - NetQuery</title>
     <style>
         :root {
@@ -10,55 +11,59 @@
             --blue: #0ea5e9;
             --purple: #8b5cf6;
             --text: #f8fafc;
+            --border: #334155;
         }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 30px; }
         .container { width: 100%; max-width: 500px; }
-        .card { background: var(--card); padding: 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        h3 { margin-bottom: 10px; color: var(--blue); }
-        p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 15px; }
+        h1 { text-align: center; color: var(--blue); margin-bottom: 30px; }
         
-        input[type="file"] { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; width: 100%; margin-bottom: 15px; border: 1px solid #334155; color: #94a3b8; }
+        .card { background: var(--card); padding: 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        h3 { margin-bottom: 8px; color: var(--text); }
+        p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 18px; }
         
-        .btn { border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; transition: 0.3s; color: white; }
+        input[type="file"] { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; width: 100%; margin-bottom: 15px; border: 1px solid var(--border); color: #fff; cursor: pointer; }
+        
+        .btn { border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; transition: 0.2s; color: white; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; }
         .btn-sites { background: var(--blue); }
         .btn-escala { background: var(--purple); }
-        .btn:hover { opacity: 0.8; transform: scale(1.02); }
+        .btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
+        .btn:active { transform: translateY(0); }
         
-        .msg { padding: 10px; border-radius: 6px; margin-bottom: 20px; text-align: center; width: 100%; font-weight: bold; }
-        .success { background: #065f46; color: #34d399; }
-        .error { background: #7f1d1d; color: #f87171; }
+        .msg { padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold; font-size: 0.9rem; }
+        .success { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+        .error { background: #7f1d1d; color: #f87171; border: 1px solid #dc2626; }
         
-        .nav-links { margin-top: 20px; display: flex; gap: 20px; justify-content: center; }
-        a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+        .footer-nav { margin-top: 30px; display: flex; justify-content: space-between; width: 100%; }
+        a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; transition: 0.2s; }
         a:hover { color: var(--blue); }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Gestão de Dados</h1><br>
+        <h1>🛠️ Painel de Controle</h1>
 
         {% if msg %} <div class="msg success">{{ msg }}</div> {% endif %}
         {% if error %} <div class="msg error">{{ error }}</div> {% endif %}
 
         <div class="card">
-            <h3>🏢 Base de Localidades (Sites)</h3>
-            <p>Carregue a planilha com a aba <b>'padrao'</b> para atualizar siglas, DDDs e dados de IE/TX/CX.</p>
+            <h3>🏢 Base de Sites</h3>
+            <p>Atualize a lista de siglas e dados técnicos (Aba 'padrao').</p>
             <form action="/upload/sites" method="post" enctype="multipart/form-data">
                 <input type="file" name="file" required>
-                <button type="submit" class="btn btn-sites">Atualizar Base de Sites</button>
+                <button type="submit" class="btn btn-sites">Atualizar Localidades</button>
             </form>
         </div>
 
         <div class="card">
-            <h3>📅 Escala de Técnicos SP</h3>
-            <p>Carregue a escala mensal (Abas: 12, 14, 15, 16, 17, 18, 19CAS, 19PAA, funcionarios).</p>
+            <h3>📅 Escala Mensal SP</h3>
+            <p>Consolide as abas de DDD (12, 15, 19CAS...) e contatos.</p>
             <form action="/upload/escala" method="post" enctype="multipart/form-data">
                 <input type="file" name="file" required>
-                <button type="submit" class="btn btn-escala">Atualizar Escalas Mensais</button>
+                <button type="submit" class="btn btn-escala">Carregar Escala de Plantão</button>
             </form>
         </div>
 
-        <div class="nav-links">
+        <div class="footer-nav">
             <a href="/">← Voltar ao Terminal</a>
             <a href="/logout" style="color: #f87171;">Encerrar Sessão</a>
         </div>
