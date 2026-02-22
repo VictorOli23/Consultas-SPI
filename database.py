@@ -2,26 +2,23 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
+from datetime import datetime
 from thefuzz import process
 
-# O sistema vai procurar a URL do banco configurada lá no Render
 DB_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
     return psycopg2.connect(DB_URL)
 
 def init_db():
-    if not DB_URL:
-        print("AVISO: DATABASE_URL não configurada!")
-        return
-        
     conn = get_connection()
     cursor = conn.cursor()
+    # Tabela de Regiões (Adicionada coluna DDD)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sites (
             sigla TEXT PRIMARY KEY,
-            localidade TEXT,
             nome_da_localidade TEXT,
+            localidade TEXT,
             area TEXT,
             ddd TEXT,
             telefone TEXT,
@@ -30,106 +27,129 @@ def init_db():
             ie TEXT
         )
     ''')
+    # Tabela de Escala
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS escala (
+            id SERIAL PRIMARY KEY,
+            ddd TEXT,
+            tecnico TEXT,
+            dia_mes INT,
+            mes_ano TEXT,
+            UNIQUE(ddd, tecnico, dia_mes, mes_ano)
+        )
+    ''')
+    # Tabela de Funcionários
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS funcionarios (
+            nome TEXT PRIMARY KEY,
+            telefone TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
 
 def process_excel(file_path):
-    df = pd.read_excel(file_path)
-    df = df.fillna('')
-    
+    xl = pd.ExcelFile(file_path)
     conn = get_connection()
     cursor = conn.cursor()
     
-    for index, row in df.iterrows():
+    # 1. Processar Aba de Sites/Localidades (Se houver aba chamada 'padrao' ou similar)
+    # Aqui mantemos a funcionalidade original de importar os dados técnicos das siglas
+    aba_sites = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
+    df_sites = xl.parse(aba_sites).fillna('')
+    for _, row in df_sites.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
-        if not sigla:
-            continue
-
-        # No PostgreSQL usamos %s em vez de ?
-        cursor.execute('''
+        if not sigla: continue
+        cursor.execute("""
             INSERT INTO sites (sigla, localidade, nome_da_localidade, area, ddd, telefone, cx, tx, ie)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (sigla) DO UPDATE SET
-                localidade=EXCLUDED.localidade,
-                nome_da_localidade=EXCLUDED.nome_da_localidade,
-                area=EXCLUDED.area,
-                ddd=EXCLUDED.ddd,
-                telefone=EXCLUDED.telefone,
-                cx=EXCLUDED.cx,
-                tx=EXCLUDED.tx,
-                ie=EXCLUDED.ie
-        ''', (
-            sigla,
-            str(row.get('localidade', '')),
-            str(row.get('NomeDaLocalidade', '')),
-            str(row.get('Area', '')),
-            str(row.get('DDD', '')),
-            str(row.get('Telefone', '')),
-            str(row.get('CX', '')),
-            str(row.get('TX', '')),
-            str(row.get('IE', ''))
-        ))
+                nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, telefone=EXCLUDED.telefone
+        """, (sigla, str(row.get('localidade','')), str(row.get('NomeDaLocalidade','')), 
+              str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
+              str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))))
+
+    # 2. Processar Funcionários
+    if 'funcionarios' in xl.sheet_names:
+        df_func = xl.parse('funcionarios').fillna('')
+        for _, row in df_func.iterrows():
+            nome = str(row.get('Nome', '')).strip()
+            if not nome: continue
+            cursor.execute("""
+                INSERT INTO funcionarios (nome, telefone) VALUES (%s, %s)
+                ON CONFLICT (nome) DO UPDATE SET telefone = EXCLUDED.telefone
+            """, (nome, str(row.get('Telefone', '')).strip()))
+
+    # 3. Processar Escalas (Abas 12, 14, 15...)
+    mes_ano_atual = datetime.now().strftime('%m-%Y')
+    ddd_sheets = [s for s in xl.sheet_names if s.isdigit()]
+    
+    for ddd in ddd_sheets:
+        df = xl.parse(ddd).fillna('')
+        colunas_dias = [c for c in df.columns if str(c).isdigit()]
+        
+        for _, row in df.iterrows():
+            tecnico = str(row.get('Nome', '')).strip()
+            if not tecnico: continue
+            
+            for dia in colunas_dias:
+                status = str(row[dia]).upper().strip()
+                if status == 'P':
+                    cursor.execute("""
+                        INSERT INTO escala (ddd, tecnico, dia_mes, mes_ano)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (ddd, tecnico, dia_mes, mes_ano) DO NOTHING
+                    """, (ddd, tecnico, int(dia), mes_ano_atual))
+    
     conn.commit()
     conn.close()
 
 def query_data(user_text):
-    if not DB_URL:
-        return "Erro: O banco de dados em nuvem não está conectado."
-        
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
+    hoje = datetime.now()
+    dia_hoje = hoje.day
+    mes_ano_hoje = hoje.strftime('%m-%Y')
 
     cursor.execute("SELECT * FROM sites")
-    all_rows = cursor.fetchall()
-    conn.close()
-
-    if not all_rows:
-        return "A base de dados está vazia. Importe os dados no Painel Admin."
-
-    words = user_text.upper().replace('?', '').replace(',', '').split()
-    siglas = {row['sigla']: row for row in all_rows}
-    cidades = {row['nome_da_localidade'].upper(): row for row in all_rows if row['nome_da_localidade']}
-
-    # 1. Busca Exata por Sigla
-    for word in words:
-        if word in siglas:
-            return format_response(siglas[word])
-
-    # 2. Busca Exata por Cidade
-    user_text_upper = user_text.upper()
-    matched_cities = []
-    for cidade, row in cidades.items():
-        if cidade in user_text_upper:
-            matched_cities.append(row)
-
-    if matched_cities:
-        if len(matched_cities) == 1:
-            return format_response(matched_cities[0])
-        else:
-            return "Encontrei várias siglas para essa cidade:<br><br>" + "<br>".join([f"• <b>{m['sigla']}</b> - {m['nome_da_localidade']}" for m in matched_cities])
-
-    # 3. Busca Aproximada (Fuzzy)
-    sigla_list = list(siglas.keys())
-    best_match = None
-    highest_score = 0
+    sites = cursor.fetchall()
+    siglas_list = [s['sigla'] for s in sites]
     
-    for word in words:
-        if len(word) < 3: continue
-        match, score = process.extractOne(word, sigla_list)
-        if score > highest_score:
-            highest_score = score
-            best_match = match
+    # Busca Identificando a Sigla
+    words = user_text.upper().replace('?', '').split()
+    match_sigla = next((w for w in words if w in siglas_list), None)
+    
+    if not match_sigla:
+        best_match, score = process.extractOne(user_text.upper(), siglas_list)
+        if score >= 80: match_sigla = best_match
 
-    if highest_score >= 70:
-        return f"Não encontrei exatamente, mas você quis dizer <b>{best_match}</b>?<br><br>" + format_response(siglas[best_match])
+    if match_sigla:
+        site_data = next(item for item in sites if item["sigla"] == match_sigla)
+        
+        # Busca técnico na escala + telefone
+        cursor.execute("""
+            SELECT e.tecnico, f.telefone
+            FROM escala e
+            LEFT JOIN funcionarios f ON e.tecnico = f.nome
+            WHERE e.ddd = %s AND e.dia_mes = %s AND e.mes_ano = %s
+        """, (str(site_data['ddd']), dia_hoje, mes_ano_hoje))
+        
+        plantonistas = cursor.fetchall()
+        conn.close()
 
-    return "Desculpe, não consegui identificar a sigla ou cidade na sua pergunta. Pode tentar de outra forma?"
+        res = f"📡 <b>Terminal NetQuery</b><br><hr>"
+        res += f"📍 <b>Localidade:</b> {site_data['nome_da_localidade']} ({match_sigla})<br>"
+        res += f"🏢 <b>Área/DDD:</b> {site_data['area']} / {site_data['ddd']}<br>"
+        res += f"📞 <b>Contato Base:</b> {site_data['telefone']}<br><br>"
+        res += f"📅 <b>Escala de Plantão ({hoje.strftime('%d/%m')}):</b><br>"
+        
+        if plantonistas:
+            for p in plantonistas:
+                res += f"👨‍🔧 <b>Técnico:</b> {p['tecnico']}<br>"
+                res += f"📱 <b>Celular:</b> <a href='tel:{p['telefone']}' style='color:#38bdf8'>{p['telefone']}</a><br>"
+        else:
+            res += "⚠️ <i>Nenhum plantonista escalado para este DDD hoje.</i>"
+        return res
 
-def format_response(row):
-    return f"""
-    <b>Sigla:</b> {row['sigla']}<br>
-    <b>Cidade:</b> {row['nome_da_localidade']} ({row['localidade']})<br>
-    <b>Área:</b> {row['area']}<br>
-    <b>Contato:</b> ({row['ddd']}) {row['telefone']}<br>
-    <b>IE / TX / CX:</b> {row['ie']} / {row['tx']} / {row['cx']}
-    """
+    conn.close()
+    return "Não identifiquei a sigla. Tente algo como 'Quem atende SJC?'"
