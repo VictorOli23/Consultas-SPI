@@ -27,7 +27,7 @@ def init_db():
             ie TEXT
         )
     ''')
-    # Tabela de Escala com coluna de Horário
+    # Tabela de Escala
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escala (
             id SERIAL PRIMARY KEY,
@@ -49,12 +49,12 @@ def init_db():
     conn.commit()
     conn.close()
 
-def process_excel(file_path):
+def process_excel_sites(file_path):
     xl = pd.ExcelFile(file_path)
     conn = get_connection()
     cursor = conn.cursor()
     
-    # 1. Processar Localidades (Aba 'padrao' ou similar)
+    # Processa a aba 'padrao' para dados técnicos
     aba_sites = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df_sites = xl.parse(aba_sites).fillna('')
     for _, row in df_sites.iterrows():
@@ -66,12 +66,21 @@ def process_excel(file_path):
             ON CONFLICT (sigla) DO UPDATE SET
                 nome_da_localidade=EXCLUDED.nome_da_localidade, 
                 ddd=EXCLUDED.ddd, 
-                telefone=EXCLUDED.telefone
+                telefone=EXCLUDED.telefone,
+                area=EXCLUDED.area,
+                localidade=EXCLUDED.localidade
         """, (sigla, str(row.get('localidade','')), str(row.get('NomeDaLocalidade','')), 
               str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
               str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))))
+    conn.commit()
+    conn.close()
 
-    # 2. Processar Funcionários
+def process_excel_escala(file_path):
+    xl = pd.ExcelFile(file_path)
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # 1. Funcionários
     if 'funcionarios' in xl.sheet_names:
         df_func = xl.parse('funcionarios').fillna('')
         for _, row in df_func.iterrows():
@@ -82,30 +91,25 @@ def process_excel(file_path):
                 ON CONFLICT (nome) DO UPDATE SET telefone = EXCLUDED.telefone
             """, (nome, str(row.get('Telefone', '')).strip()))
 
-    # 3. Processar Escalas por DDD (Abas numéricas)
+    # 2. Escalas (Abas numéricas)
     mes_ano_atual = datetime.now().strftime('%m-%Y')
     ddd_sheets = [s for s in xl.sheet_names if s.isdigit()]
     
     for ddd in ddd_sheets:
         df = xl.parse(ddd).fillna('')
-        # Identifica colunas que são números de dias (1 a 31)
         colunas_dias = [c for c in df.columns if str(c).isdigit()]
-        
         for _, row in df.iterrows():
             tecnico = str(row.get('Nome', '')).strip()
             if not tecnico: continue
-            
             for dia in colunas_dias:
-                valor_celula = str(row[dia]).strip()
-                # Salva se a célula não estiver vazia e não for apenas 'F' (Folga)
-                if valor_celula and valor_celula.upper() != 'F':
+                valor = str(row[dia]).strip()
+                if valor and valor.upper() != 'F':
                     cursor.execute("""
                         INSERT INTO escala (ddd, tecnico, dia_mes, mes_ano, horario)
                         VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (ddd, tecnico, dia_mes, mes_ano) 
                         DO UPDATE SET horario = EXCLUDED.horario
-                    """, (ddd, tecnico, int(dia), mes_ano_atual, valor_celula))
-    
+                    """, (ddd, tecnico, int(dia), mes_ano_atual, valor))
     conn.commit()
     conn.close()
 
@@ -129,8 +133,6 @@ def query_data(user_text):
 
     if match_sigla:
         site_data = next(item for item in sites if item["sigla"] == match_sigla)
-        
-        # Busca escala batendo DDD + Dia + Mês/Ano
         cursor.execute("""
             SELECT e.tecnico, e.horario, f.telefone
             FROM escala e
@@ -141,7 +143,7 @@ def query_data(user_text):
         plantonistas = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>NetQuery Terminal</b><br><hr>"
+        res = f"📡 <b>Terminal NetQuery</b><br><hr>"
         res += f"📍 <b>Localidade:</b> {site_data['nome_da_localidade']} ({match_sigla})<br>"
         res += f"🏢 <b>Área / DDD:</b> {site_data['area']} / {site_data['ddd']}<br><br>"
         res += f"📅 <b>Escala para Hoje ({hoje.strftime('%d/%m')}):</b><br>"
@@ -154,6 +156,5 @@ def query_data(user_text):
         else:
             res += "⚠️ <i>Nenhum plantonista identificado para este DDD hoje.</i>"
         return res
-
     conn.close()
-    return "Sigla não encontrada. Ex: 'Quem está em SJC?'"
+    return "Sigla não encontrada. Ex: 'Plantão SJC?'"
