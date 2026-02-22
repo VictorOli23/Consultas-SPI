@@ -40,7 +40,7 @@ def init_db():
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
     
-    # Coluna nova para mapear o CM da cidade baseado na coluna CX da planilha de sites
+    # Criando colunas dinâmicas para caso não existam
     cursor.execute("ALTER TABLE sites ADD COLUMN IF NOT EXISTS cm_responsavel TEXT")
     
     columns_escala = ['ddd_aba', 'contato_corp', 'supervisor', 'cm', 'horario', 'dia_mes', 'segmento']
@@ -51,41 +51,46 @@ def init_db():
     conn.close()
 
 def process_excel_sites(file_path):
-    xl = pd.ExcelFile(file_path)
-    aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
-    df = xl.parse(aba).fillna('')
+    xls = pd.ExcelFile(file_path)
+    aba = 'padrao' if 'padrao' in xls.sheet_names else xls.sheet_names[0]
+    df = xls.parse(aba)
     
-    header_idx = 0
-    for i, row in df.iterrows():
-        if any('Sigla' in str(v) for v in row.values):
-            header_idx = i
-            break
-            
-    df.columns = [str(c).strip().upper() for c in df.iloc[header_idx]]
-    df = df.iloc[header_idx + 1:]
+    # Padroniza as colunas da planilha para o código conseguir ler 
+    df.columns = [str(c).strip().upper() for c in df.columns]
     
+    # Se o cabeçalho não estiver na primeira linha, ele desce e procura
+    if not any('SIGLA' in c for c in df.columns):
+        for i, row in df.iterrows():
+            if any('SIGLA' in str(v).upper() for v in row.values):
+                df.columns = [str(c).strip().upper() for c in row.values]
+                df = df.iloc[i + 1:]
+                break
+                
+    df = df.fillna('')
+    
+    # Mapeia onde estão as colunas que importam
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     col_nome = next((c for c in df.columns if 'NOME' in c or 'LOCAL' in c), None)
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
-    # A MÁGICA ESTÁ AQUI: Vai ler a coluna CX para saber quem é o dono do Site
-    col_cx = next((c for c in df.columns if c == 'CX'), None)
-    col_tx = next((c for c in df.columns if c == 'TX'), None)
+    col_cx = next((c for c in df.columns if 'CX' in c), None)
+    col_tx = next((c for c in df.columns if 'TX' in c), None)
     
     conn = get_connection()
     cursor = conn.cursor()
     for _, row in df.iterrows():
         if not col_sigla: continue
-        sigla = str(row.get(col_sigla, '')).strip().upper()
-        if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
-            nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
-            ddd = str(row.get(col_ddd, '')).replace('.0', '').replace('nan', '').strip() if col_ddd else ''
+        sigla = str(row[col_sigla]).strip().upper()
+        
+        if sigla and sigla not in ['NAN', 'NONE', 'SIGLA', '']:
+            nome = str(row[col_nome]).replace('nan', '').strip() if col_nome else ''
+            ddd = str(row[col_ddd]).replace('.0', '').replace('nan', '').strip() if col_ddd else ''
             
-            # Pega o CM responsável olhando a coluna CX, se estiver vazia olha a TX
+            # MAGIA: Lê a coluna CX. Se estiver vazia, tenta ler a TX
             cm_resp = ''
             if col_cx:
-                cm_resp = str(row.get(col_cx, '')).replace('nan', '').strip().upper()
+                cm_resp = str(row[col_cx]).replace('nan', '').strip().upper()
             if not cm_resp and col_tx:
-                cm_resp = str(row.get(col_tx, '')).replace('nan', '').strip().upper()
+                cm_resp = str(row[col_tx]).replace('nan', '').strip().upper()
             
             cursor.execute("""
                 INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) 
@@ -109,27 +114,31 @@ def process_excel_escala(file_path):
     for aba in abas_alvo:
         df = xl.parse(aba, dtype=str).fillna('')
         
-        header_idx = None
-        for i, row in df.iterrows():
-            if any('Funcionários' in str(v).strip() for v in row.values):
-                header_idx = i
-                break
+        header_row = []
+        df_dados = df
         
-        if header_idx is None: continue
-        
-        header_row = df.iloc[header_idx].values
-        df_dados = df.iloc[header_idx + 1:]
+        # Encontra onde está o cabeçalho
+        if any('FUNCION' in str(c).strip().upper() for c in df.columns):
+            header_row = df.columns
+        else:
+            for i, row in df.iterrows():
+                if any('FUNCION' in str(v).strip().upper() for v in row.values):
+                    header_row = row.values
+                    df_dados = df.iloc[i + 1:]
+                    break
+                    
+        if len(header_row) == 0: continue
         
         tec_idx, contato_idx, sup_idx, cm_idx, seg_idx = -1, -1, -1, -1, -1
         dias_idx_map = {}
         
         for i, val in enumerate(header_row):
-            v_str = str(val).strip()
-            if 'Funcionários' in v_str or 'Funcionarios' in v_str: tec_idx = i
-            elif 'Contato' in v_str: contato_idx = i
-            elif 'Superv' in v_str: sup_idx = i
-            elif 'CM' == v_str.upper(): cm_idx = i
-            elif 'Segmento' in v_str or 'SEGMENTO' in v_str.upper(): seg_idx = i
+            v_str = str(val).strip().upper()
+            if 'FUNCION' in v_str: tec_idx = i
+            elif 'CONTATO' in v_str: contato_idx = i
+            elif 'SUPERV' in v_str: sup_idx = i
+            elif 'CM' == v_str: cm_idx = i
+            elif 'SEGMENTO' in v_str: seg_idx = i
             else:
                 dia_limpo = None
                 if isinstance(val, (datetime, pd.Timestamp)):
@@ -150,11 +159,12 @@ def process_excel_escala(file_path):
             if tec_idx == -1 or len(row_vals) <= tec_idx: continue
             
             tec = str(row_vals[tec_idx]).strip()
-            if not tec or tec.lower() in ['nan', 'none', '', 'funcionários']: continue
+            if not tec or tec.upper() in ['NAN', 'NONE', '', 'FUNCIONÁRIOS', 'FUNCIONARIOS']: continue
             
             contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
+            # Puxa o Segmento (Infra / TX)
             segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não especificado'
             
             for d_idx, d_limpo in dias_idx_map.items():
@@ -191,10 +201,11 @@ def query_data(user_text):
     if match:
         site = next((s for s in sites_db if s['sigla'] == match), None)
         
-        # O CM buscado será a coluna CX (ex: ARC). Se for vazio, usa os 3 primeiros caracteres da sigla (ex: IVA)
-        cm_busca = site['cm_responsavel'] if site.get('cm_responsavel') else match[:3]
+        # Pega a base vinculada da coluna CX. Se estiver em branco lá, pega as 3 primeiras letras
+        cm_banco = site.get('cm_responsavel', '').strip()
+        cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match[:3]
         
-        # Filtro Rigoroso: Busca APENAS técnicos que pertencem a este CM
+        # Filtro Rigoroso: Busca APENAS os técnicos que pertencem a este CM e DDD
         cursor.execute("""
             SELECT * FROM escala 
             WHERE ddd_aba LIKE %s 
@@ -207,21 +218,21 @@ def query_data(user_text):
         conn.close()
 
         res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | Base: {cm_busca}<br><br>"
+        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | Base vinculada: {cm_busca}<br><br>"
         
         if plantoes:
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 res_html += f"👨‍🔧 {p['tecnico']} (<b>{h_fmt}</b>)<br>"
                 
-                # Só exibe o segmento se ele existir na planilha
-                if p['segmento'] != 'Não especificado':
+                # Só exibe a "Atuação" (TX/Infra) se não estiver vazio na planilha
+                if p['segmento'] and p['segmento'] != 'Não especificado':
                     res_html += f"⚙️ Atuação: {p['segmento']}<br>"
                     
                 res_html += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
                 res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res_html += f"⚠️ Nenhum técnico exclusivo da área <b>{cm_busca}</b> de plantão hoje."
+            res_html += f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje.<br><small><i>Se este site pertence a outro CM, verifique se a coluna 'CX' no Excel de Sites está preenchida corretamente.</i></small>"
         return res_html
     
     conn.close()
