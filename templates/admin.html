@@ -4,50 +4,62 @@
     <meta charset="UTF-8">
     <title>Painel Admin - NetQuery</title>
     <style>
-        body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --blue: #0ea5e9;
+            --purple: #8b5cf6;
+            --text: #f8fafc;
+        }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
         .container { width: 100%; max-width: 500px; }
-        .card { background: #1e293b; padding: 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        h3 { margin-bottom: 10px; color: #38bdf8; }
+        .card { background: var(--card); padding: 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        h3 { margin-bottom: 10px; color: var(--blue); }
         p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 15px; }
+        
+        input[type="file"] { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; width: 100%; margin-bottom: 15px; border: 1px solid #334155; color: #94a3b8; }
+        
         .btn { border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; transition: 0.3s; color: white; }
-        .btn-sites { background: #0ea5e9; }
-        .btn-escala { background: #8b5cf6; }
+        .btn-sites { background: var(--blue); }
+        .btn-escala { background: var(--purple); }
         .btn:hover { opacity: 0.8; transform: scale(1.02); }
-        .msg { padding: 10px; border-radius: 6px; margin-bottom: 20px; text-align: center; width: 100%; }
+        
+        .msg { padding: 10px; border-radius: 6px; margin-bottom: 20px; text-align: center; width: 100%; font-weight: bold; }
         .success { background: #065f46; color: #34d399; }
         .error { background: #7f1d1d; color: #f87171; }
-        .nav-links { margin-top: 20px; display: flex; gap: 20px; }
+        
+        .nav-links { margin-top: 20px; display: flex; gap: 20px; justify-content: center; }
         a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
-        a:hover { color: #38bdf8; }
+        a:hover { color: var(--blue); }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Gerenciamento de Dados</h1><br>
+        <h1>Gestão de Dados</h1><br>
 
         {% if msg %} <div class="msg success">{{ msg }}</div> {% endif %}
         {% if error %} <div class="msg error">{{ error }}</div> {% endif %}
 
         <div class="card">
-            <h3>🏢 Base de Localidades</h3>
-            <p>Atualize siglas, endereços e DDDs (Aba 'padrao').</p>
+            <h3>🏢 Base de Localidades (Sites)</h3>
+            <p>Carregue a planilha com a aba <b>'padrao'</b> para atualizar siglas, DDDs e dados de IE/TX/CX.</p>
             <form action="/upload/sites" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" required style="margin-bottom: 15px;">
-                <button type="submit" class="btn btn-sites">Atualizar Sites</button>
+                <input type="file" name="file" required>
+                <button type="submit" class="btn btn-sites">Atualizar Base de Sites</button>
             </form>
         </div>
 
         <div class="card">
-            <h3>📅 Escalas de Plantão</h3>
-            <p>Atualize as abas de DDD (12, 14...) e funcionários.</p>
+            <h3>📅 Escala de Técnicos SP</h3>
+            <p>Carregue a escala mensal (Abas: 12, 14, 15, 16, 17, 18, 19CAS, 19PAA, funcionarios).</p>
             <form action="/upload/escala" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" required style="margin-bottom: 15px;">
-                <button type="submit" class="btn btn-escala">Atualizar Escalas</button>
+                <input type="file" name="file" required>
+                <button type="submit" class="btn btn-escala">Atualizar Escalas Mensais</button>
             </form>
         </div>
 
         <div class="nav-links">
-            <a href="/">← Voltar ao Chat</a>
+            <a href="/">← Voltar ao Terminal</a>
             <a href="/logout" style="color: #f87171;">Encerrar Sessão</a>
         </div>
     </div>
