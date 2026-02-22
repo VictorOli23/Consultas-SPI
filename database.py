@@ -32,15 +32,18 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Recria as tabelas caso precisem de atualização estrutural
     cursor.execute("DROP TABLE IF EXISTS escala") 
     
-    # Adicionada a coluna "area" na tabela de sites, pois ela costuma guardar o CM responsável
     cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
         sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, area TEXT)''')
     
+    # Adicionada a coluna 'segmento'
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
-        supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
+        supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
+    
     conn.commit()
     conn.close()
 
@@ -63,7 +66,6 @@ def process_excel_sites(file_path):
         if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
             nome = str(row.get('NomeDaLocalidade', '')).replace('nan', '').strip()
             ddd = str(row.get('DDD', '')).replace('.0', '').replace('nan', '').strip()
-            # Pega a "Área" (que geralmente é o CM que atende, ex: ARC)
             area = str(row.get('Area', '')).replace('nan', '').strip().upper()
             
             cursor.execute("""
@@ -99,7 +101,8 @@ def process_excel_escala(file_path):
         header_row = df.iloc[header_idx].values
         df_dados = df.iloc[header_idx + 1:]
         
-        tec_idx, contato_idx, sup_idx, cm_idx = -1, -1, -1, -1
+        # Adicionado o seg_idx para capturar a coluna "Segmento"
+        tec_idx, contato_idx, sup_idx, cm_idx, seg_idx = -1, -1, -1, -1, -1
         dias_idx_map = {}
         
         for i, val in enumerate(header_row):
@@ -108,6 +111,7 @@ def process_excel_escala(file_path):
             elif 'Contato' in v_str: contato_idx = i
             elif 'Superv' in v_str: sup_idx = i
             elif 'CM' == v_str.upper(): cm_idx = i
+            elif 'Segmento' in v_str: seg_idx = i
             else:
                 dia_limpo = None
                 if isinstance(val, (datetime, pd.Timestamp)):
@@ -133,6 +137,8 @@ def process_excel_escala(file_path):
             contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
+            # Mapeia o Segmento (Infra/TX/etc)
+            segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não informado'
             
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
@@ -140,12 +146,15 @@ def process_excel_escala(file_path):
                     if plantao_val and plantao_val not in ['F', 'NAN', 'NONE', 'NULL', '', 'C', 'L', 'FE', 'FF']:
                         chave_unica = f"{aba}_{tec}_{d_limpo}_{mes_ano}"
                         escala_limpa[chave_unica] = (
-                            str(aba).upper(), tec, contato, supervisor, cm, d_limpo, mes_ano, plantao_val
+                            str(aba).upper(), tec, contato, supervisor, cm, segmento, d_limpo, mes_ano, plantao_val
                         )
 
     all_rows = list(escala_limpa.values())
     if all_rows:
-        execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario) VALUES %s", all_rows)
+        execute_values(cursor, """
+            INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, segmento, dia_mes, mes_ano, horario) 
+            VALUES %s
+        """, all_rows)
     
     conn.commit()
     conn.close()
@@ -156,7 +165,6 @@ def query_data(user_text):
     hoje = datetime.now()
     dia_atual = str(hoje.day)
     
-    # Busca incluindo a coluna 'area' que criamos
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, area FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
@@ -166,9 +174,6 @@ def query_data(user_text):
     if match:
         site = next((s for s in sites_db if s['sigla'] == match), None)
         
-        # LÓGICA DE BUSCA APRIMORADA:
-        # Se a "Area" do site estiver preenchida (ex: ARC), busca por ela na coluna CM da escala.
-        # Caso contrário, usa as 3 primeiras letras da sigla (como PNI ou IVA) como fallback.
         cm_busca = site['area'] if site['area'] else match[:3]
         
         cursor.execute("""
@@ -181,8 +186,6 @@ def query_data(user_text):
         
         plantoes = cursor.fetchall()
         
-        # SE NÃO ENCONTRAR NINGUÉM usando o filtro restrito de CM, 
-        # ele faz uma "Busca de Segurança" retornando TODOS os técnicos do DDD daquela área
         if not plantoes:
             cursor.execute("""
                 SELECT * FROM escala 
@@ -201,6 +204,7 @@ def query_data(user_text):
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 res_html += f"👨‍🔧 {p['tecnico']} (<b>{h_fmt}</b>)<br>"
+                res_html += f"⚙️ Atuação: {p['segmento']}<br>"
                 res_html += f"📞 {p['contato_corp']}<br>"
                 res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155; margin:10px 0;'>"
         else:
