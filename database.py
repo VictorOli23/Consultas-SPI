@@ -7,7 +7,7 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Dicionário COMPLETO
+# Legenda completa restaurada (com o W)
 LEGENDA_HORARIOS = {
     '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
     '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
@@ -32,23 +32,19 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # Recria as tabelas caso precisem de atualização estrutural
     cursor.execute("DROP TABLE IF EXISTS escala") 
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
         sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, area TEXT)''')
-    
-    # Adicionada a coluna 'segmento'
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
-    
     conn.commit()
     conn.close()
 
 def process_excel_sites(file_path):
-    df = pd.read_excel(file_path).fillna('')
+    xl = pd.ExcelFile(file_path)
+    aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
+    df = xl.parse(aba).fillna('')
     
     header_idx = 0
     for i, row in df.iterrows():
@@ -56,17 +52,24 @@ def process_excel_sites(file_path):
             header_idx = i
             break
             
-    df.columns = [str(c).strip() for c in df.iloc[header_idx]]
+    df.columns = [str(c).strip().upper() for c in df.iloc[header_idx]]
     df = df.iloc[header_idx + 1:]
+    
+    # Mapeia colunas idependente do nome exato
+    col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
+    col_nome = next((c for c in df.columns if 'NOME' in c or 'LOCAL' in c), None)
+    col_ddd = next((c for c in df.columns if 'DDD' in c), None)
+    col_area = next((c for c in df.columns if c in ['AREA', 'ÁREA', 'CM', 'BASE']), None)
     
     conn = get_connection()
     cursor = conn.cursor()
     for _, row in df.iterrows():
-        sigla = str(row.get('Sigla', '')).strip().upper()
+        if not col_sigla: continue
+        sigla = str(row.get(col_sigla, '')).strip().upper()
         if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
-            nome = str(row.get('NomeDaLocalidade', '')).replace('nan', '').strip()
-            ddd = str(row.get('DDD', '')).replace('.0', '').replace('nan', '').strip()
-            area = str(row.get('Area', '')).replace('nan', '').strip().upper()
+            nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
+            ddd = str(row.get(col_ddd, '')).replace('.0', '').replace('nan', '').strip() if col_ddd else ''
+            area = str(row.get(col_area, '')).replace('nan', '').strip().upper() if col_area else ''
             
             cursor.execute("""
                 INSERT INTO sites (sigla, nome_da_localidade, ddd, area) 
@@ -101,7 +104,6 @@ def process_excel_escala(file_path):
         header_row = df.iloc[header_idx].values
         df_dados = df.iloc[header_idx + 1:]
         
-        # Adicionado o seg_idx para capturar a coluna "Segmento"
         tec_idx, contato_idx, sup_idx, cm_idx, seg_idx = -1, -1, -1, -1, -1
         dias_idx_map = {}
         
@@ -111,7 +113,7 @@ def process_excel_escala(file_path):
             elif 'Contato' in v_str: contato_idx = i
             elif 'Superv' in v_str: sup_idx = i
             elif 'CM' == v_str.upper(): cm_idx = i
-            elif 'Segmento' in v_str: seg_idx = i
+            elif 'Segmento' in v_str or 'SEGMENTO' in v_str.upper(): seg_idx = i
             else:
                 dia_limpo = None
                 if isinstance(val, (datetime, pd.Timestamp)):
@@ -137,8 +139,7 @@ def process_excel_escala(file_path):
             contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
-            # Mapeia o Segmento (Infra/TX/etc)
-            segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não informado'
+            segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não especificado'
             
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
@@ -174,8 +175,10 @@ def query_data(user_text):
     if match:
         site = next((s for s in sites_db if s['sigla'] == match), None)
         
+        # O CM buscado será a "Área" (se preenchida na planilha de sites) ou as 3 primeiras letras
         cm_busca = site['area'] if site['area'] else match[:3]
         
+        # Filtro Rigoroso: Busca APENAS técnicos que pertencem a este CM
         cursor.execute("""
             SELECT * FROM escala 
             WHERE ddd_aba LIKE %s 
@@ -185,20 +188,10 @@ def query_data(user_text):
         """, (f"%{site['ddd']}%", f"%{cm_busca}%", dia_atual, hoje.strftime('%m-%Y')))
         
         plantoes = cursor.fetchall()
-        
-        if not plantoes:
-            cursor.execute("""
-                SELECT * FROM escala 
-                WHERE ddd_aba LIKE %s 
-                AND dia_mes = %s 
-                AND mes_ano = %s
-            """, (f"%{site['ddd']}%", dia_atual, hoje.strftime('%m-%Y')))
-            plantoes = cursor.fetchall()
-
         conn.close()
 
         res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | Base/CM: {cm_busca}<br><br>"
+        res_html += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']} | CM: {cm_busca}<br><br>"
         
         if plantoes:
             for p in plantoes:
@@ -208,7 +201,7 @@ def query_data(user_text):
                 res_html += f"📞 {p['contato_corp']}<br>"
                 res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res_html += f"⚠️ Nenhum técnico de plantão no DDD {site['ddd']} hoje."
+            res_html += f"⚠️ Nenhum técnico exclusivo da área <b>{cm_busca}</b> de plantão hoje.<br><small><i>Se este site pertence a outro CM, atualize a coluna 'Area' na planilha de Sites.</i></small>"
         return res_html
     
     conn.close()
