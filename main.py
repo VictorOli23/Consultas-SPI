@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from werkzeug.security import generate_password_hash, check_password_hash
 import shutil
 import os
 from database import init_db, process_excel, query_data
@@ -14,12 +15,14 @@ app = FastAPI(title="Consultas de Região")
 app.add_middleware(SessionMiddleware, secret_key="super_secret_key_app_consultas")
 templates = Jinja2Templates(directory="templates")
 
-# Inicializa Banco de Dados
+# Inicializa Base de Dados
 init_db()
 
-# Credenciais Admin Fixas
+# Credenciais Admin com Encriptação de Palavra-passe (Hash)
 ADMIN_USER = "81032045"
-ADMIN_PASS = "Py@thon26!"
+# Numa aplicação real, este hash estaria guardado na base de dados.
+# Aqui geramos o hash da palavra-passe "Py@thon26!" no arranque da aplicação.
+ADMIN_PASS_HASH = generate_password_hash("Py@thon26!")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -41,10 +44,11 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
-    if username == ADMIN_USER and password == ADMIN_PASS:
+    # Verificação segura comparando o hash encriptado
+    if username == ADMIN_USER and check_password_hash(ADMIN_PASS_HASH, password):
         request.session["user"] = username
         return RedirectResponse(url="/admin", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Credenciais inválidas."})
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Credenciais inválidas ou acesso negado."})
 
 @app.get("/logout")
 async def logout(request: Request):
@@ -65,7 +69,7 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
         return RedirectResponse(url="/login", status_code=303)
 
     if not (file.filename.endswith('.xls') or file.filename.endswith('.xlsx')):
-        return templates.TemplateResponse("admin.html", {"request": request, "error": "Apenas arquivos .xls e .xlsx são permitidos."})
+        return templates.TemplateResponse("admin.html", {"request": request, "error": "Apenas ficheiros .xls e .xlsx são permitidos."})
 
     file_path = f"uploads/{file.filename}"
     with open(file_path, "wb") as buffer:
@@ -73,11 +77,11 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
 
     try:
         process_excel(file_path)
-        msg = "Arquivo importado e banco atualizado com sucesso!"
+        msg = "Ficheiro importado e base de dados atualizada com sucesso!"
         error = None
     except Exception as e:
         msg = None
-        error = f"Erro ao processar arquivo: Verifique as colunas. (Detalhe: {str(e)})"
+        error = f"Erro ao processar ficheiro: Verifique as colunas. (Detalhe: {str(e)})"
 
     if os.path.exists(file_path):
         os.remove(file_path)
