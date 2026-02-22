@@ -7,14 +7,13 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Legenda baseada na planilha fornecida
+# Legenda completa baseada na sua planilha
 LEGENDA_HORARIOS = {
-    'Y': '07:00 as 22:11', #
-    'D': '7:01 ás 7:00',   #
-    '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
-    '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
-    '7': '13:00 as 22:00', '8': '22:12 as 07:00', '14': '07:42 as 18:00',
-    'A': '7:01 ás 8:00', 'G': '16:01 ás 7:00', 'K': '17:00 ás 7:00'
+    'Y': '07:00 as 22:11', 'D': '7:01 às 7:00', '1': '07:00 as 16:00', 
+    '2': '07:30 as 16:30', '3': '08:00 as 17:00', '4': '08:30 as 17:30', 
+    '5': '11:00 as 20:00', '6': '12:30 as 21:30', '7': '13:00 as 22:00', 
+    '8': '22:12 as 07:00', '14': '07:42 as 18:00', 'A': '7:01 ás 8:00', 
+    'B': '7:01 ás 17:30', 'G': '16:01 ás 7:00', 'K': '17:00 ás 7:00'
 }
 
 def get_connection():
@@ -23,16 +22,13 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    # Tabela de Sites
     cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
         sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)''')
-    
-    # Tabela de Escala
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
     
-    # Migrações de segurança para colunas (Render/Postgres)
+    # Garante que não faltam colunas no banco
     columns = ['ddd_aba', 'contato_corp', 'supervisor', 'cm', 'horario', 'dia_mes']
     for col in columns:
         cursor.execute(f"ALTER TABLE escala ADD COLUMN IF NOT EXISTS {col} TEXT")
@@ -45,16 +41,28 @@ def process_excel_sites(file_path):
     aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df = xl.parse(aba).fillna('')
     
+    # Proteção para o cabeçalho de Sites
+    header_idx = 0
+    for i, row in df.iterrows():
+        if any('Sigla' in str(v) for v in row.values):
+            header_idx = i
+            break
+            
+    df.columns = [str(c).strip() for c in df.iloc[header_idx]]
+    df = df.iloc[header_idx + 1:]
+    
     conn = get_connection()
     cursor = conn.cursor()
     for _, row in df.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
-        if sigla:
+        if sigla and sigla not in ['NAN', 'NONE', 'SIGLA']:
+            nome = str(row.get('NomeDaLocalidade', '')).replace('nan', '').strip()
+            ddd = str(row.get('DDD', '')).replace('.0', '').replace('nan', '').strip()
             cursor.execute("""
                 INSERT INTO sites (sigla, nome_da_localidade, ddd) 
                 VALUES (%s, %s, %s) 
-                ON CONFLICT (sigla) DO UPDATE SET ddd=EXCLUDED.ddd
-            """, (sigla, str(row.get('NomeDaLocalidade')), str(row.get('DDD'))))
+                ON CONFLICT (sigla) DO UPDATE SET ddd=EXCLUDED.ddd, nome_da_localidade=EXCLUDED.nome_da_localidade
+            """, (sigla, nome, ddd))
     conn.commit()
     conn.close()
 
@@ -63,51 +71,74 @@ def process_excel_escala(file_path):
     mes_ano = datetime.now().strftime('%m-%Y')
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE escala") # Limpa dados anteriores
+    cursor.execute("TRUNCATE TABLE escala") # Limpa dados antigos
     
-    # Filtra abas que contém números de DDD
     abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
     all_rows = []
 
     for aba in abas_alvo:
-        # astype(str) resolve o erro 'float object has no attribute strip'
-        df = xl.parse(aba).astype(str).replace('nan', '')
+        df = xl.parse(aba).fillna('')
         
-        # Localiza o cabeçalho correto
+        # 1. Encontra a linha de cabeçalho com segurança
         header_idx = None
         for i, row in df.iterrows():
-            if 'Funcionários' in [str(v).strip() for v in row.values]:
+            if any('Funcionários' in str(v).strip() for v in row.values):
                 header_idx = i
                 break
         
-        if header_idx is not None:
-            df.columns = [str(c).strip() for c in df.iloc[header_idx]]
-            df = df.iloc[header_idx + 1:]
-            
-            # Mapeia colunas de dias lidando com "22/2", "23/2", etc.
-            col_dias = {}
-            for col in df.columns:
-                dia_limpo = str(col).split('/')[0].strip()
-                if dia_limpo.isdigit():
-                    col_dias[col] = dia_limpo
-
-            for _, row in df.iterrows():
-                tec = str(row.get('Funcionários', '')).strip()
-                if not tec or tec.lower() in ['', 'funcionários']: continue
+        if header_idx is None: continue
+        
+        header_row = df.iloc[header_idx].values
+        df_dados = df.iloc[header_idx + 1:]
+        
+        # 2. Mapeamento por ÍNDICE (Evita o erro de "float")
+        tec_idx, contato_idx, sup_idx, cm_idx = -1, -1, -1, -1
+        dias_idx_map = {}
+        
+        for i, val in enumerate(header_row):
+            v_str = str(val).strip()
+            if 'Funcionários' in v_str or 'Funcionarios' in v_str: tec_idx = i
+            elif 'Contato' in v_str: contato_idx = i
+            elif 'Superv' in v_str: sup_idx = i
+            elif 'CM' == v_str.upper(): cm_idx = i
+            else:
+                # Transforma qualquer formato de data maluca em número limpo (ex: "22/", "22.0", Timestamp)
+                dia_limpo = None
+                if isinstance(val, (datetime, pd.Timestamp)):
+                    dia_limpo = str(val.day)
+                elif v_str.endswith('00:00:00'):
+                    try: dia_limpo = str(pd.to_datetime(v_str).day)
+                    except: pass
+                else:
+                    poss_dia = v_str.split('/')[0].split('.')[0].strip()
+                    if poss_dia.isdigit() and 1 <= int(poss_dia) <= 31:
+                        dia_limpo = str(int(poss_dia))
                 
-                contato = str(row.get('ContatoCorp.', '')).strip()
-                supervisor = str(row.get('Supervisor', '')).strip()
-                cm = str(row.get('CM', '')).strip()
+                if dia_limpo:
+                    dias_idx_map[i] = dia_limpo
 
-                for col_orig, dia_limpo in col_dias.items():
-                    val = str(row[col_orig]).strip().upper()
-                    # Ignora Folgas (F) e células vazias
-                    if val and val not in ['F', '', 'C', 'L', 'FE', 'FF']:
+        # 3. Leitura segura das linhas
+        for _, row in df_dados.iterrows():
+            row_vals = row.values
+            if tec_idx == -1 or len(row_vals) <= tec_idx: continue
+            
+            tec = str(row_vals[tec_idx]).strip()
+            if not tec or tec.lower() in ['nan', 'none', '', 'funcionários']: continue
+            
+            # Pega as outras colunas usando o índice da coluna
+            contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
+            supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
+            cm = str(row_vals[cm_idx]).replace('nan', '').strip() if cm_idx != -1 and len(row_vals) > cm_idx else ''
+            
+            for d_idx, d_limpo in dias_idx_map.items():
+                if len(row_vals) > d_idx:
+                    plantao_val = str(row_vals[d_idx]).strip().upper()
+                    # Salva somente quem não estiver de Folga
+                    if plantao_val and plantao_val not in ['F', 'NAN', 'NONE', 'NULL', '', 'C', 'L', 'FE', 'FF']:
                         all_rows.append((
-                            aba, tec, contato, supervisor, cm, 
-                            dia_limpo, mes_ano, val
+                            str(aba).upper(), tec, contato, supervisor, cm, d_limpo, mes_ano, plantao_val
                         ))
-    
+
     if all_rows:
         execute_values(cursor, """
             INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario) 
@@ -121,7 +152,7 @@ def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
-    dia_atual = str(hoje.day) # "22"
+    dia_atual = str(hoje.day) # Exatamente o mesmo formato mapeado acima (Ex: "22")
     
     cursor.execute("SELECT sigla FROM sites")
     siglas = [r['sigla'] for r in cursor.fetchall()]
@@ -132,7 +163,7 @@ def query_data(user_text):
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
         site = cursor.fetchone()
         
-        # Busca no banco filtrando por DDD e pelo dia do mês limpo
+        # O Match perfeito: busca o DDD 15 na aba e o dia 22 na tabela limpa
         cursor.execute("""
             SELECT * FROM escala 
             WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
@@ -141,19 +172,16 @@ def query_data(user_text):
         plantoes = cursor.fetchall()
         conn.close()
 
-        res_html = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res_html += f"🏢 DDD: {site['ddd']} | Dia: {hoje.strftime('%d/%m')}<br><br>"
+        res = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
+        res += f"📅 Dia: {hoje.strftime('%d/%m')} | DDD: {site['ddd']}<br><br>"
         
         if plantoes:
             for p in plantoes:
-                # Converte os códigos Y, D, etc em texto legível
-                horario_formatado = LEGENDA_HORARIOS.get(p['horario'], f"Escala: {p['horario']}")
-                res_html += f"👨‍🔧 {p['tecnico']}<br>⏰ <b>{horario_formatado}</b><br>"
-                res_html += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
-                res_html += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
+                h = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
+                res += f"👨‍🔧 {p['tecnico']} (<b>{h}</b>)<br>📞 {p['contato_corp']}<br>👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border-top:1px dashed #334155;'>"
         else:
-            res_html += f"⚠️ Nenhum plantonista ativo no DDD {site['ddd']} para hoje."
-        return res_html
+            res += f"⚠️ Nenhum técnico com plantão ativo (Y/D/1...) encontrado para o dia {dia_atual} no DDD {site['ddd']}."
+        return res
     
     conn.close()
     return "Sigla não encontrada."
