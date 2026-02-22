@@ -29,24 +29,24 @@ def init_db():
         )
     ''')
     
-    # 2. Tabela de Escala (Estrutura Base)
+    # 2. Tabela de Escala (Estrutura Mínima)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escala (
             id SERIAL PRIMARY KEY, 
-            ddd_aba TEXT, 
             tecnico TEXT, 
             dia_mes INT, 
             mes_ano TEXT
         )
     ''')
     
-    # --- MIGRAÇÕES: Força a criação de todas as colunas necessárias ---
+    # --- MIGRAÇÕES: Adiciona as colunas necessárias ANTES de criar a restrição UNIQUE ---
+    cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS ddd_aba TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS contato_corp TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS supervisor TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS cm TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS horario TEXT")
     
-    # Garante a restrição de unicidade para evitar erros de ON CONFLICT
+    # 3. Restrição de Unicidade: impede duplicados no lote de inserção
     cursor.execute("""
         DO $$ 
         BEGIN 
@@ -56,6 +56,11 @@ def init_db():
         END $$;
     """)
     
+    # 4. Tabela de Funcionários
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS funcionarios (nome TEXT PRIMARY KEY, telefone TEXT)
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -64,7 +69,6 @@ def process_excel_sites(file_path):
     aba_sites = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df = xl.parse(aba_sites).fillna('')
     
-    # Remove duplicados da planilha antes de enviar ao banco
     sites_unicos = {}
     for _, row in df.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
@@ -91,20 +95,22 @@ def process_excel_sites(file_path):
         conn.close()
 
 def process_excel_escala(file_path):
+    # Carrega com motor openpyxl para evitar lentidão
     xl = pd.ExcelFile(file_path, engine='openpyxl')
     mes_ano = datetime.now().strftime('%m-%Y')
     
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE escala") # Limpa a escala antiga instantaneamente
+    cursor.execute("TRUNCATE TABLE escala") # Limpa a base antiga
     
+    # Abas alvo: 12, 14, 15, 16, 17, 18, 19CAS, 19PAA...
     abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
     escala_limpa = {} 
 
     for aba in abas_alvo:
         df = xl.parse(aba).fillna('')
         
-        # Localiza o cabeçalho 'Funcionários'
+        # Encontra a linha onde os dados começam
         header_row_idx = None
         for i, row in df.iterrows():
             if 'Funcionários' in row.values:
@@ -128,7 +134,6 @@ def process_excel_escala(file_path):
             for dia in col_dias:
                 valor = str(row[dia]).strip()
                 if valor and valor.upper() != 'F':
-                    # Evita duplicatas no mesmo lote de inserção
                     chave = (aba, tec, int(dia), mes_ano)
                     escala_limpa[chave] = (aba, tec, contato, supervisor, cm, int(dia), mes_ano, valor)
 
@@ -162,6 +167,7 @@ def query_data(user_text):
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
         site = cursor.fetchone()
         
+        # Busca escala usando o DDD do site e o dia atual
         cursor.execute("""
             SELECT tecnico, contato_corp, supervisor, cm, horario 
             FROM escala 
@@ -171,18 +177,18 @@ def query_data(user_text):
         plantoes = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>Terminal NetQuery</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
-        res += f"📅 Plantão de Hoje: {hoje.strftime('%d/%m')}<br><br>"
+        res_html = f"📡 <b>Terminal NetQuery</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
+        res_html += f"🏢 DDD: {site['ddd']} | Dia: {hoje.strftime('%d/%m')}<br><br>"
         
         if plantoes:
-            for p in plantonistas:
-                res += f"👨‍🔧 {p['tecnico']} (<b>{p['horario']}</b>)<br>"
-                res += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
-                res += f"👤 Sup: {p['supervisor']}<br>"
-                res += f"🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
+            for p in plantoes:
+                res_html += f"👨‍🔧 {p['tecnico']} (<b>{p['horario']}</b>)<br>"
+                res_html += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
+                res_html += f"👤 Sup: {p['supervisor']}<br>"
+                res_html += f"🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res += "⚠️ Sem escala encontrada para hoje."
-        return res
+            res_html += "⚠️ Nenhuma escala encontrada para hoje."
+        return res_html
     
     conn.close()
-    return "Sigla não encontrada."
+    return "Sigla não encontrada. Tente: 'Plantão Bauru?'"
