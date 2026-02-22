@@ -7,14 +7,11 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Legenda baseada na sua planilha
+# Legenda completa para conversão
 LEGENDA_HORARIOS = {
-    'Y': '07:00 as 22:11',
-    'D': '7:01 às 7:00',
-    '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
-    '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
-    '7': '13:00 as 22:00', '8': '22:12 as 07:00', '14': '07:42 as 18:00',
-    'A': '7:01 ás 8:00', 'G': '16:01 ás 7:00', 'K': '17:00 ás 7:00'
+    'Y': '07:00 as 22:11', 'D': '7:01 às 7:00', '1': '07:00 as 16:00', 
+    '2': '07:30 as 16:30', '3': '08:00 as 17:00', 'A': '7:01 ás 8:00', 
+    'G': '16:01 ás 7:00', 'K': '17:00 ás 7:00'
 }
 
 def get_connection():
@@ -23,10 +20,16 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
-        id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
-        supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
+    cursor.execute("CREATE TABLE IF NOT EXISTS sites (sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT)")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS escala (
+            id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
+            supervisor TEXT, cm TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT
+        )
+    """)
+    # Força a existência das colunas
+    for col in ['contato_corp', 'supervisor', 'cm', 'horario', 'dia_mes']:
+        cursor.execute(f"ALTER TABLE escala ADD COLUMN IF NOT EXISTS {col} TEXT")
     conn.commit()
     conn.close()
 
@@ -49,49 +52,49 @@ def process_excel_escala(file_path):
     mes_ano = datetime.now().strftime('%m-%Y')
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE escala")
+    cursor.execute("TRUNCATE TABLE escala") # Limpa tudo antes de subir
     
     abas_alvo = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
-    all_data = []
+    all_rows = []
 
     for aba in abas_alvo:
-        df = xl.parse(aba).fillna('')
+        # Lê a aba e converte tudo para string para evitar erros de tipo
+        df = xl.parse(aba).astype(str).replace('nan', '')
         
-        # Acha a linha "Funcionários"
-        idx = None
+        # Localiza a linha onde está escrito "Funcionários"
+        header_idx = None
         for i, row in df.iterrows():
-            if 'Funcionários' in [str(v).strip() for v in row.values]:
-                idx = i
+            if any('Funcionários' in str(v) for v in row.values):
+                header_idx = i
                 break
         
-        if idx is not None:
-            df.columns = [str(c).strip() for c in df.iloc[idx]]
-            df = df.iloc[idx+1:]
+        if header_idx is not None:
+            df.columns = [c.strip() for c in df.iloc[header_idx]]
+            df = df.iloc[header_idx + 1:]
             
-            # LÓGICA DE DIA FLEXÍVEL: Pega o que vem antes da barra (Ex: "23/2" -> "23")
+            # Mapeia colunas de dias lidando com o formato "22/2"
             col_dias = {}
             for col in df.columns:
-                # Transforma "23/2" ou "23/" em "23"
-                dia_extraido = str(col).split('/')[0].strip()
-                if dia_extraido.isdigit():
-                    col_dias[col] = dia_extraido
+                dia_limpo = col.split('/')[0].strip()
+                if dia_limpo.isdigit():
+                    col_dias[col] = dia_limpo
 
             for _, row in df.iterrows():
-                tec = str(row.get('Funcionários', '')).strip()
-                if not tec or tec.lower() in ['nan', 'funcionários']: continue
+                tec = row.get('Funcionários', '').strip()
+                if not tec or tec.lower() in ['', 'funcionários']: continue
                 
-                for col_original, dia_limpo in col_dias.items():
-                    valor = str(row[col_original]).strip().upper()
-                    # Salva se tiver escala e não for Folga (F)
-                    if valor and valor not in ['F', 'NAN', '', 'C']:
-                        all_data.append((
-                            aba, tec, str(row.get('ContatoCorp.', '')), 
-                            str(row.get('Supervisor', '')), str(row.get('CM', '')), 
-                            dia_limpo, mes_ano, valor
+                for col_orig, dia_limpo in col_dias.items():
+                    val = row[col_orig].strip().upper()
+                    # Salva apenas se for um código de plantão (Y, D, 1, 2...) e não Folga (F)
+                    if val and val not in ['F', '', 'C', 'L', 'FE']:
+                        all_rows.append((
+                            aba, tec, row.get('ContatoCorp.', ''), 
+                            row.get('Supervisor', ''), row.get('CM', ''), 
+                            dia_limpo, mes_ano, val
                         ))
     
-    if all_data:
-        execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario) VALUES %s", all_data)
+    if all_rows:
+        execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario) VALUES %s", all_rows)
     conn.commit()
     conn.close()
 
@@ -99,32 +102,35 @@ def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
-    dia_str = str(hoje.day) # Vai buscar "22", "23", etc conforme o dia atual
+    dia_atual = str(hoje.day) # "22"
     
     cursor.execute("SELECT sigla FROM sites")
     siglas = [r['sigla'] for r in cursor.fetchall()]
+    
     match = process.extractOne(user_text.upper(), siglas)[0] if process.extractOne(user_text.upper(), siglas)[1] > 80 else None
 
     if match:
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
-        s = cursor.fetchone()
+        site = cursor.fetchone()
         
+        # Busca por DDD na aba da escala e pelo dia limpo
         cursor.execute("""
             SELECT * FROM escala 
             WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
-        """, (f"%{s['ddd']}%", dia_str, hoje.strftime('%m-%Y')))
+        """, (f"%{site['ddd']}%", dia_atual, hoje.strftime('%m-%Y')))
         
         plantoes = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{s['nome_da_localidade']} ({match})</b><br>📅 Dia: {hoje.strftime('%d/%m')}<br><br>"
+        res = f"📡 <b>NetQuery Terminal</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>📅 Dia: {hoje.strftime('%d/%m')}<br><br>"
         
         if plantoes:
             for p in plantoes:
+                # Converte Y em "07:00 as 22:11" etc.
                 h = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 res += f"👨‍🔧 {p['tecnico']} (<b>{h}</b>)<br>📞 {p['contato_corp']}<br>👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr>"
         else:
-            res += f"⚠️ Nenhum plantonista ativo no DDD {s['ddd']} para o dia {dia_str}."
+            res += f"⚠️ Nenhum técnico ativo para o DDD {site['ddd']} hoje (Coluna {dia_atual} da escala)."
         return res
     
     conn.close()
