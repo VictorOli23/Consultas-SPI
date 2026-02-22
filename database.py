@@ -7,7 +7,7 @@ from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
 
-# Dicionário de Legenda baseado na sua imagem
+# Dicionário de Legenda extraído das suas imagens
 LEGENDA_HORARIOS = {
     '1': '07:00 as 16:00', '2': '07:30 as 16:30', '3': '08:00 as 17:00',
     '4': '08:30 as 17:30', '5': '11:00 as 20:00', '6': '12:30 as 21:30',
@@ -41,12 +41,10 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escala (
             id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, 
-            contato_corp TEXT, supervisor TEXT, cm TEXT, 
-            dia_mes INT, mes_ano TEXT, horario TEXT,
-            UNIQUE(ddd_aba, tecnico, dia_mes, mes_ano)
+            dia_mes INT, mes_ano TEXT, UNIQUE(ddd_aba, tecnico, dia_mes, mes_ano)
         )
     ''')
-    # Migrações de segurança
+    # Migrações forçadas de colunas
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS contato_corp TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS supervisor TEXT")
     cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS cm TEXT")
@@ -58,15 +56,12 @@ def process_excel_sites(file_path):
     xl = pd.ExcelFile(file_path)
     aba = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
     df = xl.parse(aba).fillna('')
-    sites_unicos = {}
-    for _, row in df.iterrows():
-        sigla = str(row.get('Sigla', '')).strip().upper()
-        if not sigla: continue
-        sites_unicos[sigla] = (
-            sigla, str(row.get('NomeDaLocalidade','')), str(row.get('localidade','')),
-            str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
-            str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))
-        )
+    sites_unicos = {str(row.get('Sigla', '')).strip().upper(): (
+        str(row.get('Sigla', '')).strip().upper(), str(row.get('NomeDaLocalidade','')), 
+        str(row.get('localidade','')), str(row.get('Area','')), str(row.get('DDD','')), 
+        str(row.get('Telefone','')), str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))
+    ) for _, row in df.iterrows() if str(row.get('Sigla', '')).strip()}
+    
     if sites_unicos:
         conn = get_connection()
         cursor = conn.cursor()
@@ -101,7 +96,6 @@ def process_excel_escala(file_path):
             
             for dia_col in col_dias:
                 valor = str(row[dia_col]).strip().upper()
-                # Salva TUDO, inclusive 'F', para garantir que a gente veja a escala completa
                 if valor and valor != 'NAN':
                     dia_limpo = int(float(str(dia_col)))
                     chave = (aba, tec, dia_limpo, mes_ano)
@@ -123,7 +117,6 @@ def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
-    dia_hoje = hoje.day
     
     cursor.execute("SELECT sigla FROM sites")
     siglas = [r['sigla'] for r in cursor.fetchall()]
@@ -138,13 +131,13 @@ def query_data(user_text):
         cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
         s = cursor.fetchone()
         
-        # BUSCA: Filtra quem NÃO está de folga (F) ou compensado (C)
+        # Busca por todos os técnicos daquela região (DDD) que não estão de folga
         cursor.execute("""
             SELECT tecnico, contato_corp, supervisor, cm, horario 
             FROM escala 
             WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
             AND horario NOT IN ('F', 'C', 'L', 'FE', 'FF')
-        """, (f"%{s['ddd']}%", dia_hoje, hoje.strftime('%m-%Y')))
+        """, (f"%{s['ddd']}%", hoje.day, hoje.strftime('%m-%Y')))
         
         plantoes = cursor.fetchall()
         conn.close()
@@ -159,7 +152,7 @@ def query_data(user_text):
                 res += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
                 res += f"👤 Sup: {p['supervisor']}<br>🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res += "⚠️ <b>Atenção:</b> Todos os técnicos desta região estão de folga ou compensado hoje."
+            res += f"⚠️ <b>Atenção:</b> Nenhum técnico de plantão no DDD {s['ddd']} para hoje."
         return res
     
     conn.close()
