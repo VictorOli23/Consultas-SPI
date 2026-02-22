@@ -1,6 +1,6 @@
 import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 import pandas as pd
 from datetime import datetime
 from thefuzz import process
@@ -13,153 +13,169 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    # Tabela de Localidades (Aba 'padrao')
+    
+    # 1. Tabela de Sites
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sites (
-            sigla TEXT PRIMARY KEY,
-            nome_da_localidade TEXT,
-            localidade TEXT,
-            area TEXT,
-            ddd TEXT,
-            telefone TEXT,
-            cx TEXT,
-            tx TEXT,
-            ie TEXT
+            sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, localidade TEXT,
+            area TEXT, ddd TEXT, telefone TEXT, cx TEXT, tx TEXT, ie TEXT
         )
     ''')
-    # Tabela de Escala com colunas extras: Supervisor e CM
+    
+    # 2. Tabela de Escala (Estrutura Base)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS escala (
-            id SERIAL PRIMARY KEY,
-            ddd_aba TEXT,
-            tecnico TEXT,
-            contato_corp TEXT,
-            supervisor TEXT,
-            cm TEXT,
-            dia_mes INT,
-            mes_ano TEXT,
-            horario TEXT,
+            id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, 
+            dia_mes INT, mes_ano TEXT, horario TEXT,
             UNIQUE(ddd_aba, tecnico, dia_mes, mes_ano)
         )
     ''')
-    # Tabela de Funcionários (Caso queira manter contatos fixos)
+    
+    # --- MIGRAÇÃO: Força a criação das colunas novas caso a tabela já exista ---
+    cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS contato_corp TEXT")
+    cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS supervisor TEXT")
+    cursor.execute("ALTER TABLE escala ADD COLUMN IF NOT EXISTS cm TEXT")
+    
+    # 3. Tabela de Funcionários
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS funcionarios (
-            nome TEXT PRIMARY KEY,
-            telefone TEXT
-        )
+        CREATE TABLE IF NOT EXISTS funcionarios (nome TEXT PRIMARY KEY, telefone TEXT)
     ''')
+    
     conn.commit()
     conn.close()
 
 def process_excel_sites(file_path):
+    # Carregamento rápido de sites
     xl = pd.ExcelFile(file_path)
-    conn = get_connection()
-    cursor = conn.cursor()
     aba_sites = 'padrao' if 'padrao' in xl.sheet_names else xl.sheet_names[0]
-    df_sites = xl.parse(aba_sites).fillna('')
-    for _, row in df_sites.iterrows():
+    df = xl.parse(aba_sites).fillna('')
+    
+    data_list = []
+    for _, row in df.iterrows():
         sigla = str(row.get('Sigla', '')).strip().upper()
         if not sigla: continue
-        cursor.execute("""
-            INSERT INTO sites (sigla, localidade, nome_da_localidade, area, ddd, telefone, cx, tx, ie)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (sigla) DO UPDATE SET
-                nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, area=EXCLUDED.area
-        """, (sigla, str(row.get('localidade','')), str(row.get('NomeDaLocalidade','')), 
-              str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
-              str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))))
-    conn.commit()
-    conn.close()
+        data_list.append((
+            sigla, str(row.get('NomeDaLocalidade','')), str(row.get('localidade','')),
+            str(row.get('Area','')), str(row.get('DDD','')), str(row.get('Telefone','')),
+            str(row.get('CX','')), str(row.get('TX','')), str(row.get('IE',''))
+        ))
+    
+    if data_list:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Inserção em lote para ser instantâneo
+        query = """
+            INSERT INTO sites (sigla, nome_da_localidade, localidade, area, ddd, telefone, cx, tx, ie)
+            VALUES %s 
+            ON CONFLICT (sigla) DO UPDATE SET 
+                nome_da_localidade=EXCLUDED.nome_da_localidade, 
+                ddd=EXCLUDED.ddd, 
+                area=EXCLUDED.area
+        """
+        execute_values(cursor, query, data_list)
+        conn.commit()
+        conn.close()
 
 def process_excel_escala(file_path):
-    xl = pd.ExcelFile(file_path)
+    xl = pd.ExcelFile(file_path, engine='openpyxl')
+    mes_ano = datetime.now().strftime('%m-%Y')
+    
     conn = get_connection()
     cursor = conn.cursor()
+    cursor.execute("TRUNCATE TABLE escala") # Limpeza ultra rápida
     
-    # Limpa escala anterior para não duplicar dados do mês
-    cursor.execute("DELETE FROM escala")
-    
-    mes_ano_atual = datetime.now().strftime('%m-%Y')
-    # Filtra abas que começam com DDD ou nomes específicos de escala
-    abas_escala = [s for s in xl.sheet_names if any(ddd in s for ddd in ['12','14','15','16','17','18','19'])]
+    all_data = []
+    abas_escala = [s for s in xl.sheet_names if any(d in s for d in ['12','14','15','16','17','18','19'])]
     
     for aba in abas_escala:
         df = xl.parse(aba).fillna('')
-        # Identifica colunas de dias (1 a 31)
-        colunas_dias = [c for c in df.columns if str(c).isdigit()]
+        
+        # Detecta onde começa o cabeçalho 'Funcionários' (pula linhas vazias do topo)
+        header_row_idx = None
+        for i, row in df.iterrows():
+            if 'Funcionários' in row.values:
+                header_row_idx = i
+                break
+        
+        if header_row_idx is not None:
+            df.columns = df.iloc[header_row_idx]
+            df = df.iloc[header_row_idx + 1:]
+        
+        col_dias = [c for c in df.columns if str(c).isdigit()]
         
         for _, row in df.iterrows():
-            # Mapeamento conforme sua descrição
-            tecnico = str(row.get('Funcionários', '')).strip()
-            if not tecnico: continue
+            tec = str(row.get('Funcionários', '')).strip()
+            if not tec or tec.lower() in ['nan', 'funcionários', '']: continue
             
             contato = str(row.get('ContatoCorp.', '')).strip()
             supervisor = str(row.get('Supervisor', '')).strip()
             cm = str(row.get('CM', '')).strip()
             
-            for dia in colunas_dias:
-                valor_escala = str(row[dia]).strip()
-                # Ignora Folgas ('F') e células vazias
-                if valor_escala and valor_escala.upper() != 'F':
-                    cursor.execute("""
-                        INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (aba, tecnico, contato, supervisor, cm, int(dia), mes_ano_atual, valor_escala))
-    
+            for dia in col_dias:
+                valor = str(row[dia]).strip()
+                if valor and valor.upper() != 'F':
+                    all_data.append((
+                        aba, tec, contato, supervisor, cm, int(dia), mes_ano, valor
+                    ))
+        
+        # Envia para o banco em blocos para não travar a memória
+        if len(all_data) > 1000:
+            execute_values(cursor, """
+                INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario)
+                VALUES %s
+            """, all_data)
+            all_data = []
+
+    if all_data:
+        execute_values(cursor, """
+            INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, dia_mes, mes_ano, horario)
+            VALUES %s
+        """, all_data)
+        
     conn.commit()
     conn.close()
 
 def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Pega o dia de HOJE automaticamente
     hoje = datetime.now()
-    dia_hoje = hoje.day
-    mes_ano_hoje = hoje.strftime('%m-%Y')
-
-    cursor.execute("SELECT * FROM sites")
-    sites = cursor.fetchall()
-    siglas_list = [s['sigla'] for s in sites]
+    
+    cursor.execute("SELECT sigla FROM sites")
+    siglas = [r['sigla'] for r in cursor.fetchall()]
     
     words = user_text.upper().replace('?', '').split()
-    match_sigla = next((w for w in words if w in siglas_list), None)
+    match = next((w for w in words if w in siglas), None)
     
-    if not match_sigla:
-        best_match, score = process.extractOne(user_text.upper(), siglas_list)
-        if score >= 80: match_sigla = best_match
+    if not match:
+        res_fuzzy = process.extractOne(user_text.upper(), siglas)
+        if res_fuzzy and res_fuzzy[1] >= 80: match = res_fuzzy[0]
 
-    if match_sigla:
-        site_data = next(item for item in sites if item["sigla"] == match_sigla)
-        ddd_site = str(site_data['ddd'])
+    if match:
+        cursor.execute("SELECT * FROM sites WHERE sigla = %s", (match,))
+        site = cursor.fetchone()
         
-        # Busca escala baseada no DDD do site e no dia de HOJE
-        # A query busca técnicos cujo DDD da aba contenha o DDD do site (ex: '19' em '19CAS')
+        # Busca escala batendo DDD + Dia de Hoje
         cursor.execute("""
-            SELECT tecnico, contato_corp, supervisor, cm, horario
+            SELECT tecnico, contato_corp, supervisor, cm, horario 
             FROM escala 
             WHERE ddd_aba LIKE %s AND dia_mes = %s AND mes_ano = %s
-        """, (f'%{ddd_site}%', dia_hoje, mes_ano_hoje))
+        """, (f"%{site['ddd']}%", hoje.day, hoje.strftime('%m-%Y')))
         
         plantonistas = cursor.fetchall()
         conn.close()
 
-        res = f"📡 <b>NetQuery Terminal</b><br><hr>"
-        res += f"📍 <b>Localidade:</b> {site_data['nome_da_localidade']} ({match_sigla})<br>"
-        res += f"🏢 <b>Área/DDD:</b> {site_data['area']} / {site_data['ddd']}<br>"
-        res += f"📅 <b>Plantonistas de Hoje ({hoje.strftime('%d/%m')}):</b><br><br>"
+        res = f"📡 <b>Terminal NetQuery</b><br><hr>📍 <b>{site['nome_da_localidade']} ({match})</b><br>"
+        res += f"🏢 DDD: {site['ddd']} | Dia: {hoje.strftime('%d/%m')}<br><br>"
         
         if plantonistas:
             for p in plantonistas:
-                res += f"👨‍🔧 <b>Técnico:</b> {p['tecnico']}<br>"
-                res += f"⏰ <b>Horário:</b> {p['horario']}<br>"
-                res += f"📞 <b>Contato:</b> <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
-                res += f"👤 <b>Supervisor:</b> {p['supervisor']}<br>"
-                res += f"🖥️ <b>CM:</b> {p['cm']}<br><hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
+                res += f"👨‍🔧 {p['tecnico']} (<b>{p['horario']}</b>)<br>"
+                res += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8'>{p['contato_corp']}</a><br>"
+                res += f"👤 Sup: {p['supervisor']}<br>"
+                res += f"🖥️ CM: {p['cm']}<hr style='border:0; border-top:1px dashed #334155; margin:10px 0;'>"
         else:
-            res += "⚠️ <i>Nenhum plantão encontrado para este DDD hoje na escala.</i>"
+            res += "⚠️ Nenhuma escala de plantão encontrada para hoje."
         return res
-
+    
     conn.close()
-    return "Sigla não identificada. Tente: 'Quem atende em SJC?'"
+    return "Sigla não encontrada. Tente: 'Quem está em SJC?'"
