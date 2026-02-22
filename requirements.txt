@@ -8,3 +8,4 @@ xlrd
 thefuzz
 itsdangerous
 werkzeug
+psycopg2-binary
