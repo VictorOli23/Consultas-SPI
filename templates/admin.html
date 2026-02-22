@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin</title>
+    <style>
+        body { background: #f9fafb; font-family: sans-serif; margin: 0; padding: 0; color: #1f2937; }
+        .navbar { background: #1f2937; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; color: white; }
+        .navbar a { color: #fca5a5; text-decoration: none; font-weight: bold; }
+        .container { max-width: 600px; margin: 40px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-bottom: 10px; }
+        p { color: #6b7280; margin-bottom: 20px; font-size: 0.95rem; }
+        .upload-area { border: 2px dashed #d1d5db; padding: 40px; text-align: center; border-radius: 8px; background: #f3f4f6; margin-bottom: 20px; }
+        input[type="file"] { margin-top: 10px; }
+        button { background: #10b981; color: white; padding: 12px 24px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1rem; }
+        button:hover { background: #059669; }
+        .msg { background: #d1fae5; color: #065f46; padding: 12px; border-radius: 6px; margin-bottom: 20px; }
+        .error { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 6px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div>Painel Admin - Consultas de Região</div>
+        <a href="/logout">Sair</a>
+    </div>
+    
+    <div class="container">
+        <h2>Atualizar Base de Dados</h2>
+        <p>Faça o upload da planilha Excel (.xls ou .xlsx). As colunas exigidas são: <i>localidade, NomeDaLocalidade, Area, Sigla, DDD, Telefone, CX, TX, IE</i>.</p>
+        
+        {% if msg %} <div class="msg">{{ msg }}</div> {% endif %}
+        {% if error %} <div class="error">{{ error }}</div> {% endif %}
+
+        <form action="/upload" method="POST" enctype="multipart/form-data">
+            <div class="upload-area">
+                <label for="file">Selecione o arquivo Excel:</label><br>
+                <input type="file" name="file" accept=".xls,.xlsx" required>
+            </div>
+            <button type="submit">Importar Dados</button>
+        </form>
+    </div>
+</body>
+</html>
