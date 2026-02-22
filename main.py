@@ -5,18 +5,21 @@ from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import generate_password_hash, check_password_hash
 import shutil
 import os
-# Importação corrigida com os nomes das novas funções
+# Importação das funções atualizadas no database.py
 from database import init_db, query_data, process_excel_sites, process_excel_escala
 
+# Garante que a pasta de uploads existe
 os.makedirs("uploads", exist_ok=True)
+
 app = FastAPI(title="NetQuery Operations")
-app.add_middleware(SessionMiddleware, secret_key="chave_secreta_victor")
+# Chave de sessão para o login do Victor
+app.add_middleware(SessionMiddleware, secret_key="victor_sistecom_2026")
 templates = Jinja2Templates(directory="templates")
 
-# Inicializa o banco de dados PostgreSQL
+# Inicializa as tabelas no PostgreSQL
 init_db()
 
-# Credenciais Admin (Victor Henrique de Oliveira)
+# Credenciais de Acesso (Dados do Usuário)
 ADMIN_USER = "81032045"
 ADMIN_PASS_HASH = generate_password_hash("Py@thon26!")
 
@@ -24,11 +27,11 @@ ADMIN_PASS_HASH = generate_password_hash("Py@thon26!")
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-# Rota para manter o UptimeRobot ativo
+# Mantém o UptimeRobot ativo sem erro 405
 @app.head("/ping")
 @app.get("/ping")
 async def health_check():
-    return {"status": "Sistema Online"}
+    return {"status": "Sistemas Online"}
 
 @app.post("/query")
 async def ask_query(request: Request):
@@ -46,7 +49,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
     if username == ADMIN_USER and check_password_hash(ADMIN_PASS_HASH, password):
         request.session["user"] = username
         return RedirectResponse(url="/admin", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Credenciais inválidas."})
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Credenciais Inválidas."})
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
@@ -54,7 +57,7 @@ async def admin_page(request: Request):
         return RedirectResponse(url="/login", status_code=303)
     return templates.TemplateResponse("admin.html", {"request": request})
 
-# Rota Dinâmica que recebe 'sites' ou 'escala'
+# Rota de Upload Duplo: identifica se é 'sites' ou 'escala'
 @app.post("/upload/{tipo}")
 async def upload_file(request: Request, tipo: str, file: UploadFile = File(...)):
     if not request.session.get("user"):
@@ -65,19 +68,18 @@ async def upload_file(request: Request, tipo: str, file: UploadFile = File(...))
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        # Chama a função correta baseada na URL do botão clicado
         if tipo == "sites":
             process_excel_sites(file_path)
-            msg = "Base de SITES (Localidades) atualizada com sucesso!"
+            msg = "Base de Localidades atualizada!"
         elif tipo == "escala":
             process_excel_escala(file_path)
-            msg = "Escala de PLANTÃO mensal atualizada com sucesso!"
+            msg = "Escala de Plantão atualizada com sucesso!"
         else:
-            raise Exception("Tipo de upload inválido.")
+            raise Exception("Tipo de arquivo desconhecido.")
         
         res = templates.TemplateResponse("admin.html", {"request": request, "msg": msg})
     except Exception as e:
-        res = templates.TemplateResponse("admin.html", {"request": request, "error": f"Erro: {str(e)}"})
+        res = templates.TemplateResponse("admin.html", {"request": request, "error": f"Erro no processamento: {str(e)}"})
     
     if os.path.exists(file_path):
         os.remove(file_path)
