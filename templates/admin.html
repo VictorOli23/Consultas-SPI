@@ -13,6 +13,7 @@
             text-align: center; 
             padding: 40px 20px; 
             margin: 0;
+            margin-bottom: 50px; /* Evita que o rodapé sobreponha algo no final da página */
         }
         h1 { color: #0ea5e9; margin-bottom: 5px;}
         .subtitle { color: #94a3b8; margin-bottom: 30px;}
@@ -101,6 +102,27 @@
         a { color: #38bdf8; text-decoration: none; font-weight: 500;}
         a:hover { text-decoration: underline; }
 
+        /* ESTILOS DO RODAPÉ (COPYRIGHT) */
+        .footer {
+            position: fixed;
+            bottom: 10px;
+            width: 100%;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.8rem;
+            z-index: 10;
+        }
+        .footer a {
+            color: #38bdf8;
+            text-decoration: none;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+        .footer a:hover {
+            color: #0ea5e9;
+            text-decoration: underline;
+        }
+
         @media (max-width: 600px) {
             .stats-dashboard, .upload-section { flex-direction: column; }
             .stat-card, .box { width: 100%; box-sizing: border-box; }
@@ -159,6 +181,10 @@
             <a href="/">← Voltar ao Terminal</a>
             <a href="/logout" style="color: #ef4444;">Sair do Sistema</a>
         </div>
+    </div>
+
+    <div class="footer">
+        &copy; 2026 NetQuery Telecom | Todos os direitos reservados <a href="https://victoroli23.github.io/portfolio/" target="_blank">Victor Henrique de Oliveira</a>
     </div>
 </body>
 </html>
