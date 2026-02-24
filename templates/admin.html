@@ -1,72 +1,87 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Admin - NetQuery</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg: #0f172a;
-            --card: #1e293b;
-            --blue: #0ea5e9;
-            --purple: #8b5cf6;
-            --text: #f8fafc;
-            --border: #334155;
+        body { 
+            font-family: 'Roboto', sans-serif; 
+            background-color: #0f172a; 
+            color: white; 
+            text-align: center; 
+            padding: 50px 20px; 
+            margin: 0;
         }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 30px; }
-        .container { width: 100%; max-width: 500px; }
-        h1 { text-align: center; color: var(--blue); margin-bottom: 30px; }
-        
-        .card { background: var(--card); padding: 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        h3 { margin-bottom: 8px; color: var(--text); }
-        p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 18px; }
-        
-        input[type="file"] { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; width: 100%; margin-bottom: 15px; border: 1px solid var(--border); color: #fff; cursor: pointer; }
-        
-        .btn { border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; transition: 0.2s; color: white; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; }
-        .btn-sites { background: var(--blue); }
-        .btn-escala { background: var(--purple); }
-        .btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
-        .btn:active { transform: translateY(0); }
-        
-        .msg { padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold; font-size: 0.9rem; }
-        .success { background: #064e3b; color: #34d399; border: 1px solid #059669; }
-        .error { background: #7f1d1d; color: #f87171; border: 1px solid #dc2626; }
-        
-        .footer-nav { margin-top: 30px; display: flex; justify-content: space-between; width: 100%; }
-        a { color: #94a3b8; text-decoration: none; font-size: 0.9rem; transition: 0.2s; }
-        a:hover { color: var(--blue); }
+        h1 { color: #0ea5e9; }
+        .box { 
+            background: #1e293b; 
+            padding: 30px; 
+            border-radius: 12px; 
+            display: inline-block; 
+            margin: 20px; 
+            border: 1px solid #334155;
+            text-align: left;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        input[type="file"] {
+            display: block;
+            margin-bottom: 15px;
+            color: #cbd5e1;
+        }
+        button { 
+            padding: 10px 20px; 
+            background-color: #0ea5e9; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-weight: bold;
+            width: 100%;
+        }
+        button:hover { background-color: #0284c7; }
+        .links {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        a { 
+            color: #38bdf8; 
+            text-decoration: none; 
+            font-weight: 500;
+        }
+        a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🛠️ Painel de Controle</h1>
-
-        {% if msg %} <div class="msg success">{{ msg }}</div> {% endif %}
-        {% if error %} <div class="msg error">{{ error }}</div> {% endif %}
-
-        <div class="card">
-            <h3>🏢 Base de Sites</h3>
-            <p>Atualize a lista de siglas e dados técnicos (Aba 'padrao').</p>
-            <form action="/upload/sites" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <button type="submit" class="btn btn-sites">Atualizar Localidades</button>
+    <h1>Painel de Administração</h1>
+    <p style="color: #94a3b8;">Atualize as bases de dados do sistema NetQuery.</p>
+    
+    <div>
+        <div class="box">
+            <h3 style="margin-top: 0;">1. Subir Planilha de SITES</h3>
+            <p style="font-size: 0.85rem; color: #94a3b8;">Faça isso primeiro para atualizar as bases.</p>
+            <form action="/upload_sites" method="POST" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".xlsx" required>
+                <button type="submit">Enviar Sites</button>
             </form>
         </div>
 
-        <div class="card">
-            <h3>📅 Escala Mensal SP</h3>
-            <p>Consolide as abas de DDD (12, 15, 19CAS...) e contatos.</p>
-            <form action="/upload/escala" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <button type="submit" class="btn btn-escala">Carregar Escala de Plantão</button>
+        <div class="box">
+            <h3 style="margin-top: 0;">2. Subir Planilha de ESCALA</h3>
+            <p style="font-size: 0.85rem; color: #94a3b8;">Faça isso após atualizar os sites.</p>
+            <form action="/upload_escala" method="POST" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".xlsx" required>
+                <button type="submit">Enviar Escala</button>
             </form>
         </div>
+    </div>
 
-        <div class="footer-nav">
-            <a href="/">← Voltar ao Terminal</a>
-            <a href="/logout" style="color: #f87171;">Encerrar Sessão</a>
-        </div>
+    <div class="links">
+        <a href="/">← Voltar ao Terminal</a>
+        <a href="/logout" style="color: #ef4444;">Sair do Admin</a>
     </div>
 </body>
 </html>
