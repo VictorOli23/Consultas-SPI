@@ -1,14 +1,13 @@
 import os
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 from werkzeug.utils import secure_filename
-from database import init_db, process_excel_sites, process_excel_escala, query_data
+from database import init_db, process_excel_sites, process_excel_escala, query_data, get_db_stats
 
 app = Flask(__name__)
 app.secret_key = 'netquery_secreto_2026'
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Cria as tabelas no banco de dados assim que o app inicia
 init_db()
 
 @app.route("/")
@@ -21,7 +20,6 @@ def chat():
     if not user_input:
         return jsonify({"error": "Mensagem vazia"}), 400
 
-    # A função query_data agora devolve um dicionário com os técnicos separados
     resultado = query_data(user_input)
     return jsonify({"response": resultado})
 
@@ -30,7 +28,7 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-       # A senha agora fica escondida no servidor do Render (Segurança Profissional)
+        
         SENHA_SECRETA = os.environ.get("ADMIN_PASSWORD")
         
         if username == "81032045" and password == SENHA_SECRETA: 
@@ -44,7 +42,10 @@ def login():
 def admin():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template("admin.html")
+    
+    # Pega os status do banco para mostrar na tela
+    db_stats = get_db_stats()
+    return render_template("admin.html", stats=db_stats)
 
 @app.route("/upload_sites", methods=["POST"])
 def upload_sites():
@@ -55,10 +56,10 @@ def upload_sites():
         file.save(filepath)
         try:
             process_excel_sites(filepath)
-            return "Planilha de Sites processada com sucesso! <br><br><a href='/admin'>Voltar ao Painel</a>"
+            flash("✅ Planilha de SITES atualizada com sucesso no banco de dados!", "success")
         except Exception as e:
-            return f"Erro ao processar: {e} <br><br><a href='/admin'>Voltar ao Painel</a>"
-    return "Nenhum arquivo enviado. <a href='/admin'>Voltar</a>"
+            flash(f"❌ Erro ao processar Sites: {e}", "error")
+    return redirect(url_for('admin'))
 
 @app.route("/upload_escala", methods=["POST"])
 def upload_escala():
@@ -69,10 +70,10 @@ def upload_escala():
         file.save(filepath)
         try:
             process_excel_escala(filepath)
-            return "Planilha de Escala processada com sucesso! <br><br><a href='/admin'>Voltar ao Painel</a>"
+            flash("✅ Planilha de ESCALA atualizada com sucesso no banco de dados!", "success")
         except Exception as e:
-            return f"Erro ao processar: {e} <br><br><a href='/admin'>Voltar ao Painel</a>"
-    return "Nenhum arquivo enviado. <a href='/admin'>Voltar</a>"
+            flash(f"❌ Erro ao processar Escala: {e}", "error")
+    return redirect(url_for('admin'))
 
 @app.route("/logout")
 def logout():
@@ -81,4 +82,3 @@ def logout():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
