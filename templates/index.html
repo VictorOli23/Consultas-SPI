@@ -1,103 +1,253 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NetQuery - Terminal de Operações</title>
+    <title>NetQuery Terminal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg-grad: radial-gradient(circle at top right, #0f172a, #020617);
-            --primary-glow: #0ea5e9;
-            --chat-bg: rgba(30, 41, 59, 0.7);
-            --text-light: #f8fafc;
-            --text-muted: #94a3b8;
-            --user-bubble: #0ea5e9;
-            --sys-bubble: rgba(51, 65, 85, 0.9);
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        body { background: var(--bg-grad); height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; color: var(--text-light); }
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: 95vh;
+            background-color: #1e293b;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        .header {
+            background-color: #0ea5e9;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header a {
+            color: white;
+            text-decoration: none;
+            font-size: 0.9rem;
+            background-color: rgba(0,0,0,0.2);
+            padding: 5px 10px;
+            border-radius: 5px;
+            transition: 0.3s;
+        }
+        .header a:hover {
+            background-color: rgba(0,0,0,0.4);
+        }
+        .chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .message {
+            max-width: 90%;
+            padding: 15px;
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+        .user-msg {
+            background-color: #0ea5e9;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+        .bot-msg {
+            background-color: #334155;
+            color: #cbd5e1;
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+            width: 100%; 
+            box-sizing: border-box;
+        }
         
-        .header { width: 100%; max-width: 800px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header h1 { font-size: 1.5rem; display: flex; align-items: center; gap: 10px; color: #38bdf8; text-shadow: 0 0 10px rgba(14, 165, 233, 0.5); }
-        .login-btn { border: 1px solid #0ea5e9; color: #38bdf8; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; transition: 0.3s; }
-        .login-btn:hover { background: #0ea5e9; color: #fff; }
+        /* Layout das duas colunas */
+        .response-header {
+            border-bottom: 1px solid #475569;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .columns-container {
+            display: flex;
+            gap: 15px;
+            width: 100%;
+        }
+        .column {
+            flex: 1;
+            background-color: #0f172a;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+        }
+        .column-title {
+            text-align: center;
+            color: #38bdf8;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border-bottom: 1px dashed #475569;
+            padding-bottom: 5px;
+        }
+        .tec-card {
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+        .tec-card:last-child { 
+            margin-bottom: 0; 
+            border-bottom: none !important;
+        }
         
-        .chat-container { width: 100%; max-width: 800px; background: var(--chat-bg); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; height: 75vh; overflow: hidden; }
-        .chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
-        
-        .message { max-width: 85%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 0.95rem; animation: fadeIn 0.3s ease-in-out; }
-        .message.system { background: var(--sys-bubble); color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid rgba(255,255,255,0.05); }
-        .message.system hr { border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0; }
-        .message.user { background: var(--user-bubble); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-        
-        .input-area { padding: 15px 20px; background: rgba(15, 23, 42, 0.8); border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 10px; }
-        input[type="text"] { flex: 1; padding: 12px 16px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid #334155; border-radius: 8px; outline: none; }
-        input[type="text"]:focus { border-color: #0ea5e9; }
-        
-        button.btn-send { background: #0ea5e9; color: white; border: none; padding: 0 24px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        
-        .dot { width: 8px; height: 8px; background: #38bdf8; border-radius: 50%; display: inline-block; animation: bounce 1.4s infinite ease-in-out both; }
-        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .input-area {
+            display: flex;
+            padding: 20px;
+            background-color: #0f172a;
+            border-top: 1px solid #334155;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #475569;
+            background-color: #1e293b;
+            color: white;
+            border-radius: 8px;
+            outline: none;
+            font-size: 1rem;
+        }
+        button {
+            margin-left: 10px;
+            padding: 12px 20px;
+            background-color: #0ea5e9;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        button:hover { 
+            background-color: #0284c7; 
+        }
+
+        /* Responsividade para celular */
+        @media (max-width: 600px) {
+            .columns-container {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
+
+<div class="chat-container">
     <div class="header">
-        <h1>📡 NetQuery Telecom</h1>
-        <a href="/login" class="login-btn">Acesso Restrito</a>
+        <span>📡 NetQuery Terminal</span>
+        <a href="/login">⚙️ Admin</a>
     </div>
     
-    <div class="chat-container">
-        <div class="chat-box" id="chatBox">
-            <div class="message system">Terminal Operacional Ativo. 🌐<br>Informe a Sigla ou Cidade para consultar o plantão de hoje.</div>
-        </div>
-
-        <div class="input-area">
-            <input type="text" id="userInput" placeholder="Ex: SJC ou Quem atende em Campinas?" onkeypress="handleKeyPress(event)" autocomplete="off">
-            <button class="btn-send" onclick="sendMessage()">Consultar</button>
-        </div>
+    <div class="chat-box" id="chat-box">
+        <div class="message bot-msg">Sistema Operacional Ativo. 🌐<br>Informe a Sigla para consultar o plantão.</div>
     </div>
 
-    <script>
-        const chatBox = document.getElementById("chatBox");
-        const userInput = document.getElementById("userInput");
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Ex: SJC ou PNI..." onkeypress="handleKeyPress(event)">
+        <button onclick="sendMessage()">Buscar</button>
+    </div>
+</div>
 
-        function addMessage(text, sender) {
-            const msgDiv = document.createElement("div");
-            msgDiv.classList.add("message", sender);
-            msgDiv.innerHTML = text; // Permite renderizar o HTML vindo do servidor
-            chatBox.appendChild(msgDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return msgDiv;
-        }
+<script>
+    function handleKeyPress(e) {
+        if (e.keyCode === 13) sendMessage();
+    }
 
-        async function sendMessage() {
-            const text = userInput.value.trim();
-            if (!text) return;
-            
-            addMessage(text, "user");
-            userInput.value = "";
-            
-            const typing = addMessage('<span class="dot"></span> <span class="dot"></span> <span class="dot"></span>', "system");
-            
-            try {
-                const response = await fetch('/query', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question: text })
-                });
-                const data = await response.json();
-                chatBox.removeChild(typing);
-                addMessage(data.answer, "system");
-            } catch (error) {
-                chatBox.removeChild(typing);
-                addMessage("Erro ao conectar com o banco de dados.", "system");
+    function sendMessage() {
+        const input = document.getElementById("user-input");
+        const message = input.value.trim();
+        if (message === "") return;
+
+        appendMessage(message, 'user-msg');
+        input.value = "";
+
+        fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const resp = data.response;
+            if (!resp.encontrado || resp.erro) {
+                appendHTML(resp.erro || "Sigla não encontrada.", 'bot-msg');
+                return;
             }
-        }
 
-        function handleKeyPress(e) {
-            if (e.key === "Enter") sendMessage();
-        }
-    </script>
+            // Montagem visual das colunas
+            let htmlContent = `<div class="response-header">${resp.cabecalho}</div>`;
+            htmlContent += `<div class="columns-container">`;
+            
+            // Coluna Infra
+            htmlContent += `<div class="column">
+                                <div class="column-title">🛠️ INFRA (Fixa/Móvel)</div>`;
+            if (resp.infra.length > 0) {
+                resp.infra.forEach(tec => htmlContent += `<div class="tec-card">${tec}</div>`);
+            } else {
+                htmlContent += `<div style="text-align:center; color:#64748b; font-size:0.9rem;">Sem plantonista</div>`;
+            }
+            htmlContent += `</div>`;
+
+            // Coluna TX/Eletrônica
+            htmlContent += `<div class="column">
+                                <div class="column-title">🔌 TX / COMUTAÇÃO</div>`;
+            if (resp.tx.length > 0) {
+                resp.tx.forEach(tec => htmlContent += `<div class="tec-card">${tec}</div>`);
+            } else {
+                htmlContent += `<div style="text-align:center; color:#64748b; font-size:0.9rem;">Sem plantonista</div>`;
+            }
+            htmlContent += `</div></div>`;
+
+            appendHTML(htmlContent, 'bot-msg');
+        })
+        .catch(err => {
+            appendMessage("Erro de conexão com o servidor.", 'bot-msg');
+        });
+    }
+
+    function appendMessage(text, className) {
+        const chatBox = document.getElementById("chat-box");
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "message " + className;
+        msgDiv.innerText = text;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function appendHTML(html, className) {
+        const chatBox = document.getElementById("chat-box");
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "message " + className;
+        msgDiv.innerHTML = html;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+</script>
+
 </body>
 </html>
