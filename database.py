@@ -32,14 +32,11 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS escala") 
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
         sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, area TEXT, cm_responsavel TEXT)''')
-        
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
         id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
         supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
-    
     conn.commit()
     conn.close()
 
@@ -80,7 +77,7 @@ def process_excel_sites(file_path):
                 cm_resp = str(row.get(col_cx, '')).replace('nan', '').strip().upper()
             if not cm_resp and col_tx:
                 cm_resp = str(row.get(col_tx, '')).replace('nan', '').strip().upper()
-            
+                
             dados_insercao.append((sigla, nome, ddd, cm_resp))
 
     if dados_insercao:
@@ -107,7 +104,6 @@ def process_excel_escala(file_path):
 
     for aba in abas_alvo:
         df = xl.parse(aba, dtype=str).fillna('')
-        
         header_row = []
         df_dados = df
         
@@ -143,9 +139,7 @@ def process_excel_escala(file_path):
                     poss_dia = v_str.split('/')[0].split('.')[0].strip()
                     if poss_dia.isdigit() and 1 <= int(poss_dia) <= 31:
                         dia_limpo = str(int(poss_dia))
-                
-                if dia_limpo:
-                    dias_idx_map[i] = dia_limpo
+                if dia_limpo: dias_idx_map[i] = dia_limpo
 
         for _, row in df_dados.iterrows():
             row_vals = row.values
@@ -164,7 +158,6 @@ def process_excel_escala(file_path):
                     plantao_val = str(row_vals[d_idx]).strip().upper()
                     if plantao_val and plantao_val not in ['F', 'NAN', 'NONE', 'NULL', '', 'C', 'L', 'FE', 'FF']:
                         chave_unica = f"{aba}_{tec}_{d_limpo}_{mes_ano}"
-                        
                         if chave_unica not in chaves_vistas:
                             chaves_vistas.add(chave_unica)
                             all_rows.append((
@@ -194,16 +187,12 @@ def query_data(user_text):
 
     if match:
         site = next((s for s in sites_db if s['sigla'] == match), None)
-        
         cm_banco = site.get('cm_responsavel', '').strip()
         cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match[:3]
         
         cursor.execute("""
             SELECT * FROM escala 
-            WHERE ddd_aba LIKE %s 
-            AND cm ILIKE %s
-            AND dia_mes = %s 
-            AND mes_ano = %s
+            WHERE ddd_aba LIKE %s AND cm ILIKE %s AND dia_mes = %s AND mes_ano = %s
         """, (f"%{site['ddd']}%", f"%{cm_busca}%", dia_atual, hoje.strftime('%m-%Y')))
         
         plantoes = cursor.fetchall()
@@ -219,21 +208,35 @@ def query_data(user_text):
         if plantoes:
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
-                
                 tec_info = f"👨‍🔧 <b>{p['tecnico']}</b><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado':
                     tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}<hr style='border-top:1px dashed #334155; margin:8px 0;'>"
                 
-                # Separa os técnicos nas colunas com base na palavra Infra
                 if 'INFRA' in p['segmento'].upper():
                     resposta["infra"].append(tec_info)
                 else:
                     resposta["tx"].append(tec_info)
         else:
-             resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje.<br><small><i>Se este site pertence a outro CM, verifique se a coluna 'CX' no Excel de Sites está preenchida corretamente.</i></small>"
+             resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje."
              
         return resposta
     
     conn.close()
     return {"encontrado": False, "erro": "Sigla não encontrada no banco de dados."}
+
+# NOVA FUNÇÃO PARA O DASHBOARD ADMIN
+def get_db_stats():
+    conn = get_connection()
+    cursor = conn.cursor()
+    stats = {"sites": 0, "escala": 0}
+    try:
+        cursor.execute("SELECT COUNT(*) FROM sites")
+        stats["sites"] = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM escala")
+        stats["escala"] = cursor.fetchone()[0]
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return stats
