@@ -30,8 +30,10 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        # Utilize sua matrícula e a senha padrão
-        if username == "81032045" and password == "admin": 
+       # A senha agora fica escondida no servidor do Render (Segurança Profissional)
+        SENHA_SECRETA = os.environ.get("ADMIN_PASSWORD")
+        
+        if username == "81032045" and password == SENHA_SECRETA: 
             session['logged_in'] = True
             return redirect(url_for('admin'))
         else:
@@ -79,3 +81,4 @@ def logout():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
