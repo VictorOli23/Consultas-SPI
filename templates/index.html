@@ -20,7 +20,7 @@
         .chat-container {
             width: 100%;
             max-width: 800px;
-            height: 95vh;
+            height: 90vh; 
             background-color: #1e293b;
             border-radius: 12px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5);
@@ -28,6 +28,7 @@
             flex-direction: column;
             overflow: hidden;
             border: 1px solid #334155;
+            margin-bottom: 30px; 
         }
         .header {
             background-color: #0ea5e9;
@@ -80,7 +81,6 @@
             box-sizing: border-box;
         }
         
-        /* Layout das duas colunas */
         .response-header {
             border-bottom: 1px solid #475569;
             padding-bottom: 10px;
@@ -147,7 +147,27 @@
             background-color: #0284c7; 
         }
 
-        /* Responsividade para celular */
+        /* ESTILOS DO RODAPÉ (COPYRIGHT) */
+        .footer {
+            position: fixed;
+            bottom: 10px;
+            width: 100%;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.8rem;
+            z-index: 10;
+        }
+        .footer a {
+            color: #38bdf8;
+            text-decoration: none;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+        .footer a:hover {
+            color: #0ea5e9;
+            text-decoration: underline;
+        }
+
         @media (max-width: 600px) {
             .columns-container {
                 flex-direction: column;
@@ -171,6 +191,10 @@
         <input type="text" id="user-input" placeholder="Ex: SJC ou PNI..." onkeypress="handleKeyPress(event)">
         <button onclick="sendMessage()">Buscar</button>
     </div>
+</div>
+
+<div class="footer">
+    &copy; 2026 NetQuery Telecom | Todos os direitos reservados <a href="https://victoroli23.github.io/portfolio/" target="_blank">Victor Henrique de Oliveira</a>
 </div>
 
 <script>
@@ -199,11 +223,9 @@
                 return;
             }
 
-            // Montagem visual das colunas
             let htmlContent = `<div class="response-header">${resp.cabecalho}</div>`;
             htmlContent += `<div class="columns-container">`;
             
-            // Coluna Infra
             htmlContent += `<div class="column">
                                 <div class="column-title">🛠️ INFRA (Fixa/Móvel)</div>`;
             if (resp.infra.length > 0) {
@@ -213,7 +235,6 @@
             }
             htmlContent += `</div>`;
 
-            // Coluna TX/Eletrônica
             htmlContent += `<div class="column">
                                 <div class="column-title">🔌 TX / COMUTAÇÃO</div>`;
             if (resp.tx.length > 0) {
