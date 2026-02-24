@@ -50,7 +50,28 @@
         }
         button:hover { background-color: #0284c7; }
         .error { color: #ef4444; margin-bottom: 15px; font-size: 0.9rem;}
-        a { color: #38bdf8; text-decoration: none; font-size: 0.9rem; display: block; margin-top: 20px;}
+        a.voltar { color: #38bdf8; text-decoration: none; font-size: 0.9rem; display: block; margin-top: 20px;}
+        
+        /* ESTILOS DO RODAPÉ (COPYRIGHT) */
+        .footer {
+            position: fixed;
+            bottom: 10px;
+            width: 100%;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.8rem;
+            z-index: 10;
+        }
+        .footer a {
+            color: #38bdf8;
+            text-decoration: none;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+        .footer a:hover {
+            color: #0ea5e9;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -64,7 +85,11 @@
             <input type="password" name="password" placeholder="Senha" required>
             <button type="submit">Entrar</button>
         </form>
-        <a href="/">← Voltar ao Terminal</a>
+        <a class="voltar" href="/">← Voltar ao Terminal</a>
+    </div>
+
+    <div class="footer">
+        &copy; 2026 NetQuery Telecom | Todos os direitos reservados <a href="https://victoroli23.github.io/portfolio/" target="_blank">Victor Henrique de Oliveira</a>
     </div>
 </body>
 </html>
