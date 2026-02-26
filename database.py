@@ -47,20 +47,25 @@ def process_excel_sites(file_path):
     
     header_idx = 0
     for i, row in df.iterrows():
-        if any('Sigla' in str(v) for v in row.values):
+        if any('SIGLA' in str(v).upper() for v in row.values):
             header_idx = i
             break
             
-    df.columns = [str(c).strip().upper() for c in df.iloc[header_idx]]
+    # Tira todos os espaços dos nomes das colunas para não ter erro
+    df.columns = [str(c).strip().upper().replace(' ', '') for c in df.iloc[header_idx]]
     df = df.iloc[header_idx + 1:]
     
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     
-    # A MÁGICA FOI AQUI: Agora ele procura "NOME" primeiro. Só se não achar ele tenta "LOCAL"
-    col_nome = next((c for c in df.columns if 'NOME' in c), None)
-    if not col_nome:
-        col_nome = next((c for c in df.columns if 'LOCAL' in c), None)
-        
+    # MÁGICA: Procura EXATAMENTE a coluna 'NOMEDALOCALIDADE' primeiro
+    col_nome = None
+    if 'NOMEDALOCALIDADE' in df.columns:
+        col_nome = 'NOMEDALOCALIDADE'
+    else:
+        col_nome = next((c for c in df.columns if 'NOME' in c), None)
+        if not col_nome:
+            col_nome = next((c for c in df.columns if 'LOCAL' in c), None)
+            
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
     col_cx = next((c for c in df.columns if 'CX' in c), None)
     col_tx = next((c for c in df.columns if 'TX' in c), None)
@@ -75,6 +80,11 @@ def process_excel_sites(file_path):
         
         if sigla and sigla not in ['NAN', 'NONE', 'SIGLA', '']:
             nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
+            
+            # Se vier um número com .0 no final (ex: 11459.0), a gente limpa
+            if nome.endswith('.0'):
+                nome = nome[:-2]
+                
             ddd = str(row.get(col_ddd, '')).replace('.0', '').replace('nan', '').strip() if col_ddd else ''
             
             cm_resp = ''
