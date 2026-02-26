@@ -45,16 +45,18 @@ def process_excel_sites(file_path):
     aba = 'padrao' if 'padrao' in xls.sheet_names else xls.sheet_names[0]
     df = xls.parse(aba).fillna('')
     
-    header_idx = 0
-    for i, row in df.iterrows():
-        if any('SIGLA' in str(v).upper() for v in row.values):
-            header_idx = i
-            break
-            
-    # Tira todos os espaços dos nomes das colunas para não ter erro
-    df.columns = [str(c).strip().upper().replace(' ', '') for c in df.iloc[header_idx]]
-    df = df.iloc[header_idx + 1:]
-    
+    # CORREÇÃO CRÍTICA: Verifica se o cabeçalho já está na primeira linha (o normal do Excel)
+    if any('SIGLA' in str(c).upper() for c in df.columns):
+        df.columns = [str(c).strip().upper().replace(' ', '') for c in df.columns]
+    else:
+        header_idx = 0
+        for i, row in df.iterrows():
+            if any('SIGLA' in str(v).upper() for v in row.values):
+                header_idx = i
+                break
+        df.columns = [str(c).strip().upper().replace(' ', '') for c in df.iloc[header_idx]]
+        df = df.iloc[header_idx + 1:]
+        
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     
     # MÁGICA: Procura EXATAMENTE a coluna 'NOMEDALOCALIDADE' primeiro
@@ -81,7 +83,7 @@ def process_excel_sites(file_path):
         if sigla and sigla not in ['NAN', 'NONE', 'SIGLA', '']:
             nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
             
-            # Se vier um número com .0 no final (ex: 11459.0), a gente limpa
+            # Limpa números que vem com .0 no final
             if nome.endswith('.0'):
                 nome = nome[:-2]
                 
@@ -96,6 +98,7 @@ def process_excel_sites(file_path):
             dados_insercao.append((sigla, nome, ddd, cm_resp))
 
     if dados_insercao:
+        # ON CONFLICT DO UPDATE: Ele vai sobrescrever aquele 11459.0 pelo nome Penápolis!
         execute_values(cursor, """
             INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) 
             VALUES %s 
