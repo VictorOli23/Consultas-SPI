@@ -55,7 +55,12 @@ def process_excel_sites(file_path):
     df = df.iloc[header_idx + 1:]
     
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
-    col_nome = next((c for c in df.columns if 'NOME' in c or 'LOCAL' in c), None)
+    
+    # A MÁGICA FOI AQUI: Agora ele procura "NOME" primeiro. Só se não achar ele tenta "LOCAL"
+    col_nome = next((c for c in df.columns if 'NOME' in c), None)
+    if not col_nome:
+        col_nome = next((c for c in df.columns if 'LOCAL' in c), None)
+        
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
     col_cx = next((c for c in df.columns if 'CX' in c), None)
     col_tx = next((c for c in df.columns if 'TX' in c), None)
@@ -225,7 +230,6 @@ def query_data(user_text):
     conn.close()
     return {"encontrado": False, "erro": "Sigla não encontrada no banco de dados."}
 
-# NOVA FUNÇÃO PARA O DASHBOARD ADMIN
 def get_db_stats():
     conn = get_connection()
     cursor = conn.cursor()
