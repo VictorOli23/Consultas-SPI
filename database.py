@@ -45,7 +45,6 @@ def process_excel_sites(file_path):
     aba = 'padrao' if 'padrao' in xls.sheet_names else xls.sheet_names[0]
     df = xls.parse(aba).fillna('')
     
-    # CORREÇÃO CRÍTICA: Verifica se o cabeçalho já está na primeira linha (o normal do Excel)
     if any('SIGLA' in str(c).upper() for c in df.columns):
         df.columns = [str(c).strip().upper().replace(' ', '') for c in df.columns]
     else:
@@ -59,7 +58,6 @@ def process_excel_sites(file_path):
         
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     
-    # MÁGICA: Procura EXATAMENTE a coluna 'NOMEDALOCALIDADE' primeiro
     col_nome = None
     if 'NOMEDALOCALIDADE' in df.columns:
         col_nome = 'NOMEDALOCALIDADE'
@@ -74,7 +72,9 @@ def process_excel_sites(file_path):
     
     conn = get_connection()
     cursor = conn.cursor()
-    dados_insercao = []
+    
+    # MÁGICA: Usando um Dicionário. Se houver duas siglas iguais no Excel, a segunda substitui a primeira aqui dentro do Python
+    dados_dict = {}
     
     for _, row in df.iterrows():
         if not col_sigla: continue
@@ -83,7 +83,6 @@ def process_excel_sites(file_path):
         if sigla and sigla not in ['NAN', 'NONE', 'SIGLA', '']:
             nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
             
-            # Limpa números que vem com .0 no final
             if nome.endswith('.0'):
                 nome = nome[:-2]
                 
@@ -95,10 +94,13 @@ def process_excel_sites(file_path):
             if not cm_resp and col_tx:
                 cm_resp = str(row.get(col_tx, '')).replace('nan', '').strip().upper()
                 
-            dados_insercao.append((sigla, nome, ddd, cm_resp))
+            # Salva no dicionário. A sigla é a "Chave".
+            dados_dict[sigla] = (sigla, nome, ddd, cm_resp)
+
+    # Transforma o dicionário (já sem duplicatas) numa lista para mandar para o banco
+    dados_insercao = list(dados_dict.values())
 
     if dados_insercao:
-        # ON CONFLICT DO UPDATE: Ele vai sobrescrever aquele 11459.0 pelo nome Penápolis!
         execute_values(cursor, """
             INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) 
             VALUES %s 
