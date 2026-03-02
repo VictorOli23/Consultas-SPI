@@ -10,8 +10,7 @@
         :root {
             --bg-app: #0f172a; --bg-panel: #1e293b; --bg-hover: #334155;
             --primary: #0ea5e9; --primary-hover: #0284c7; --text-main: #f8fafc;
-            --text-muted: #94a3b8; --border: #334155; --warning: #eab308;
-            --success: #22c55e; --danger: #ef4444;
+            --text-muted: #94a3b8; --border: #334155; --warning: #eab308; --success: #22c55e; --danger: #ef4444;
         }
         body.light-mode {
             --bg-app: #f1f5f9; --bg-panel: #ffffff; --bg-hover: #e2e8f0;
@@ -20,9 +19,9 @@
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         body { background-color: var(--bg-app); color: var(--text-main); height: 100vh; display: flex; overflow: hidden; transition: 0.3s; }
         
-        /* SIDEBARS */
-        .sidebar-left { width: 280px; background-color: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 1.5rem 1rem; }
-        .sidebar-right { width: 300px; background-color: var(--bg-panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; padding: 1.5rem 1rem; }
+        .sidebar-left, .sidebar-right { width: 280px; background-color: var(--bg-panel); display: flex; flex-direction: column; padding: 1.5rem 1rem; }
+        .sidebar-left { border-right: 1px solid var(--border); }
+        .sidebar-right { width: 300px; border-left: 1px solid var(--border); }
         
         .brand { display: flex; align-items: center; gap: 12px; font-size: 1.2rem; font-weight: 700; color: var(--primary); margin-bottom: 2rem; padding-left: 0.5rem; }
         .btn-new-chat { background: transparent; color: var(--text-main); border: 1px solid var(--border); padding: 0.8rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-weight: 500; transition: 0.2s; margin-bottom: 2rem; }
@@ -30,7 +29,6 @@
         .menu-item { padding: 0.6rem 0.5rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; transition: 0.2s; }
         .menu-item:hover { background-color: var(--bg-hover); }
 
-        /* CHAT */
         .main-chat { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-app); position: relative; }
         .chat-area { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
         .message-wrapper { display: flex; width: 100%; flex-direction: column; }
@@ -45,10 +43,8 @@
         .input-wrapper { display: flex; background-color: var(--bg-app); border: 1px solid var(--border); border-radius: 30px; padding: 0.4rem; }
         .input-wrapper input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 0 1.5rem; font-size: 1rem; outline: none; text-transform: uppercase;}
         .btn-buscar { background-color: var(--primary); color: #fff; border: none; padding: 0.8rem 2rem; border-radius: 25px; font-weight: 600; cursor: pointer; transition: 0.3s; }
-        .btn-buscar:hover { background-color: var(--primary-hover); }
-
-        /* MODAIS */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; visibility: hidden; opacity: 0; transition: 0.3s; }
+        
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; visibility: hidden; opacity: 0; transition: 0.3s; }
         .modal-overlay.active { visibility: visible; opacity: 1; }
         .modal-content { background-color: var(--bg-panel); width: 400px; border-radius: 12px; border: 1px solid var(--border); padding: 2rem; position: relative; }
         .close-modal { position: absolute; top: 15px; right: 15px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.2rem; }
@@ -56,10 +52,8 @@
         .config-group label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-muted); }
         .config-group input[type="text"], .config-group input[type="password"], .config-group textarea { width: 100%; padding: 10px; border-radius: 6px; background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border); outline: none; resize: none; }
         .btn-action { width: 100%; padding: 10px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 10px; background-color: var(--primary); color: white; transition: 0.3s; }
-        
         input[type="file"]::file-selector-button { background-color: var(--primary); color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; margin-right: 10px; font-weight: 600; }
         
-        /* Toggle */
         .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .4s; border-radius: 34px; }
@@ -73,10 +67,7 @@
     <aside class="sidebar-left">
         <div class="brand"><i class="fa-solid fa-network-wired"></i><span>Consultas SPI</span></div>
         <button class="btn-new-chat" onclick="limparChat()"><i class="fa-solid fa-plus"></i> Novo Chat</button>
-        <div class="menu-item" style="cursor:default; margin-bottom: 10px;">
-            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight:bold;">Tire dúvidas sobre horários e plantões rapidamente.</span>
-        </div>
-        
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; padding-left:5px;">Olá, <b id="displayMeuNome" style="color:var(--primary);"></b></div>
         <div style="margin-top: auto; display: flex; flex-direction: column; gap: 5px;">
             <div class="menu-item" onclick="abrirTelaLogin()" style="color: var(--warning);"><span><i class="fa-solid fa-lock" style="width: 20px;"></i> Painel Admin</span></div>
             <div class="menu-item" onclick="abrirConfig()"><span><i class="fa-solid fa-gear" style="color: var(--text-muted); width: 20px;"></i> Configurações</span></div>
@@ -90,7 +81,6 @@
                 <div class="message">Sistema Operacional Ativo. <i class="fa-solid fa-globe" style="color: var(--primary);"></i><br><span style="color: var(--text-muted);">Informe a Sigla para consultar o plantão de hoje.</span></div>
             </div>
         </div>
-
         <footer class="input-area">
             <div class="input-wrapper">
                 <input type="text" id="siglaInput" placeholder="Ex: SJC ou PNI..." autocomplete="off">
@@ -100,10 +90,18 @@
     </main>
 
     <aside class="sidebar-right">
-        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 1rem; letter-spacing: 0.5px;">Últimas Consultas Ativas <i class="fa-solid fa-circle-notch fa-spin" style="color: var(--primary); margin-left:5px;"></i></div>
-        <div id="historicoContainer" style="overflow-y: auto; flex: 1; display:flex; flex-direction:column; gap:8px;">
-            </div>
+        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 1rem;">Últimas Consultas <i class="fa-solid fa-circle-notch fa-spin" style="color: var(--primary); margin-left:5px;"></i></div>
+        <div id="historicoContainer" style="overflow-y: auto; flex: 1; display:flex; flex-direction:column; gap:8px;"></div>
     </aside>
+
+    <div class="modal-overlay" id="welcomeModal">
+        <div class="modal-content" style="width: 320px; text-align: center;">
+            <h3 style="color: var(--primary); margin-bottom: 10px;"><i class="fa-solid fa-user-astronaut"></i> Bem-vindo(a)!</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Como você quer ser chamado(a) no sistema?</p>
+            <input type="text" id="inputWelcomeName" placeholder="Seu Nome e Sobrenome" autocomplete="off" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; background: var(--bg-app); border: 1px solid var(--border); color: white; outline: none; text-align: center;">
+            <button class="btn-action" onclick="salvarNomeEIniciar()">Entrar no Sistema</button>
+        </div>
+    </div>
 
     <div class="modal-overlay" id="configModal">
         <div class="modal-content">
@@ -114,8 +112,8 @@
                 <label class="switch"><input type="checkbox" id="temaToggle" onchange="trocarTema()"><span class="slider"></span></label>
             </div>
             <div class="config-group">
-                <label>Nome para Exibição no Chat</label>
-                <input type="text" id="nomeUsuario" placeholder="Digite seu nome..." value="Victor">
+                <label>Seu Nome no Chat</label>
+                <input type="text" id="nomeUsuario" readonly style="opacity: 0.6; cursor: not-allowed;">
             </div>
             <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
             <h4 style="margin-bottom: 1rem; font-size: 0.9rem;">Ajuda & Solicitações</h4>
@@ -143,20 +141,26 @@
     </div>
 
     <div class="modal-overlay" id="adminModal">
-        <div class="modal-content" style="width: 600px; max-height: 85vh; overflow-y: auto;">
+        <div class="modal-content" style="width: 650px; max-height: 85vh; overflow-y: auto;">
             <button class="close-modal" onclick="fecharAdmin()"><i class="fa-solid fa-xmark"></i></button>
             <h3 style="margin-bottom: 1.5rem; color: var(--warning);"><i class="fa-solid fa-lock"></i> Painel de Administração</h3>
             
-            <div style="background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
-                <h4 style="margin-bottom: 1rem; color: var(--primary); font-size: 0.9rem;"><i class="fa-solid fa-database"></i> 1. Sincronizar Base de Sites</h4>
-                <input type="file" id="arquivoSites" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%;">
-                <button class="btn-action" id="btnUploadSites" style="background-color: var(--primary);" onclick="enviarPlanilha('sites')"><i class="fa-solid fa-upload"></i> Sincronizar Sites</button>
+            <div style="display: flex; gap: 15px; margin-bottom: 1.5rem;">
+                <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="margin-bottom: 1rem; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-database"></i> Sincronizar Sites</h4>
+                    <input type="file" id="arquivoSites" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%; font-size:0.75rem;">
+                    <button class="btn-action" id="btnUploadSites" style="background-color: var(--primary);" onclick="enviarPlanilha('sites')"><i class="fa-solid fa-upload"></i> Upload Sites</button>
+                </div>
+                <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="margin-bottom: 1rem; color: var(--success); font-size: 0.85rem;"><i class="fa-solid fa-calendar-days"></i> Sincronizar Escala</h4>
+                    <input type="file" id="arquivoEscala" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%; font-size:0.75rem;">
+                    <button class="btn-action" id="btnUploadEscala" style="background-color: var(--success);" onclick="enviarPlanilha('escala')"><i class="fa-solid fa-upload"></i> Upload Escala</button>
+                </div>
             </div>
 
-            <div style="background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
-                <h4 style="margin-bottom: 1rem; color: var(--primary); font-size: 0.9rem;"><i class="fa-solid fa-calendar-days"></i> 2. Sincronizar Planilha de Escala</h4>
-                <input type="file" id="arquivoEscala" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%;">
-                <button class="btn-action" id="btnUploadEscala" style="background-color: var(--success);" onclick="enviarPlanilha('escala')"><i class="fa-solid fa-upload"></i> Sincronizar Escala</button>
+            <h4 style="margin-bottom: 10px; font-size: 0.9rem; color: var(--text-muted);"><i class="fa-solid fa-signal" style="color: var(--success);"></i> Usuários Online</h4>
+            <div id="listaOnline" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.5rem; padding: 10px; background: var(--bg-app); border-radius: 8px; border: 1px solid var(--border);">
+                <span style="color: var(--text-muted); font-size: 0.8rem;">Carregando...</span>
             </div>
 
             <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
@@ -166,55 +170,82 @@
     </div>
 
     <script>
-        // UI
+        // CONTROLE DO NOME (TELA INICIAL) E PING ONLINE
+        let meuNome = localStorage.getItem('spi_nome');
+        let pingInterval;
+
+        window.onload = () => {
+            if(!meuNome) document.getElementById('welcomeModal').classList.add('active');
+            else iniciarSistema();
+        };
+
+        function salvarNomeEIniciar() {
+            const input = document.getElementById('inputWelcomeName').value.trim();
+            if(input.length < 2) return alert("Digite um nome com pelo menos 2 letras!");
+            meuNome = input;
+            localStorage.setItem('spi_nome', meuNome);
+            document.getElementById('welcomeModal').classList.remove('active');
+            iniciarSistema();
+        }
+
+        function iniciarSistema() {
+            document.getElementById('displayMeuNome').innerText = meuNome;
+            document.getElementById('nomeUsuario').value = meuNome;
+            
+            // Avisa o servidor que estou online a cada 30 segundos
+            const darPing = () => fetch('/ping', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome: meuNome})});
+            darPing(); // Faz logo ao abrir
+            pingInterval = setInterval(darPing, 30000);
+            
+            atualizarHistorico(); // Puxa histórico pela primeira vez
+            setInterval(atualizarHistorico, 5000); // Atualiza histórico a cada 5s
+        }
+
+        // FUNÇÕES UI
         function abrirConfig() { document.getElementById('configModal').classList.add('active'); }
         function fecharConfig() { document.getElementById('configModal').classList.remove('active'); }
         function abrirTelaLogin() { document.getElementById('usuarioAdmin').value = ""; document.getElementById('senhaAdmin').value = ""; document.getElementById('loginModal').classList.add('active'); }
         function fecharLogin() { document.getElementById('loginModal').classList.remove('active'); }
         function fecharAdmin() { document.getElementById('adminModal').classList.remove('active'); }
         function trocarTema() { if (document.getElementById('temaToggle').checked) document.body.classList.add('light-mode'); else document.body.classList.remove('light-mode'); }
-        function limparChat() { document.getElementById('chatArea').innerHTML = `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message">Chat reiniciado. <i class="fa-solid fa-globe" style="color: var(--primary);"></i></div></div>`; }
+        function limparChat() { document.getElementById('chatArea').innerHTML = `<div class="message-wrapper system"><div class="message">Chat reiniciado.</div></div>`; }
 
-        // Histórico Online (Right Sidebar)
+        // HISTÓRICO LATERAL
         async function atualizarHistorico() {
             try {
                 const resp = await fetch('/historico');
                 const lista = await resp.json();
-                const container = document.getElementById('historicoContainer');
-                container.innerHTML = lista.map(item => `
-                    <div style="background: var(--bg-app); border: 1px solid var(--border); padding: 10px; border-radius: 8px;">
-                        <div style="font-weight: 600; color: var(--primary); font-size: 0.85rem; margin-bottom:4px;">${item.sigla}</div>
+                document.getElementById('historicoContainer').innerHTML = lista.map(item => `
+                    <div style="background: var(--bg-app); border: 1px solid var(--border); padding: 10px; border-radius: 8px; border-left: 3px solid var(--primary);">
+                        <div style="font-weight: 600; font-size: 0.8rem; margin-bottom:4px;">
+                            <span style="color:var(--text-muted);">[${item.usuario}]</span> <span style="color:var(--text-main);">${item.sigla}</span>
+                        </div>
                         <div style="font-size: 0.75rem; color: var(--text-muted);">${item.status} - ${item.tempo}</div>
                     </div>
                 `).join('');
-            } catch(e) { console.log("Aguardando backend..."); }
+            } catch(e) {}
         }
-        setInterval(atualizarHistorico, 5000); // Atualiza a cada 5 segundos
-        atualizarHistorico();
 
-        // CHAT COM TABELA SEPARADA INFRA / TX
+        // BUSCA NO CHAT
         async function realizarBusca() {
             const input = document.getElementById('siglaInput');
             const siglaDigitada = input.value.trim().toUpperCase();
-            const nomeDigitado = document.getElementById('nomeUsuario').value || 'Usuário';
             const chatArea = document.getElementById('chatArea');
-            
             if(!siglaDigitada) return;
 
-            chatArea.innerHTML += `<div class="message-wrapper user"><span class="message-sender">${nomeDigitado}</span><div class="message">${siglaDigitada}</div></div>`;
+            chatArea.innerHTML += `<div class="message-wrapper user"><span class="message-sender">${meuNome}</span><div class="message">${siglaDigitada}</div></div>`;
             input.value = ''; chatArea.scrollTop = chatArea.scrollHeight;
 
             const idCarregando = "msg-" + Date.now();
-            chatArea.innerHTML += `<div class="message-wrapper system" id="${idCarregando}"><span class="message-sender">Sistema SPI</span><div class="message"><i class="fa-solid fa-spinner fa-spin"></i> Consultando...</div></div>`;
+            chatArea.innerHTML += `<div class="message-wrapper system" id="${idCarregando}"><div class="message"><i class="fa-solid fa-spinner fa-spin"></i> Buscando...</div></div>`;
             chatArea.scrollTop = chatArea.scrollHeight;
 
-            const hoje = new Date();
-            const dataPlanilha = `${hoje.getDate()}/${hoje.getMonth() + 1}`;
+            const hoje = new Date(); const dataPlanilha = `${hoje.getDate()}/${hoje.getMonth() + 1}`;
 
             try {
                 const resposta = await fetch('/chat', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: siglaDigitada, data: dataPlanilha })
+                    body: JSON.stringify({ message: siglaDigitada, data: dataPlanilha, nome: meuNome })
                 });
 
                 const dados = await resposta.json();
@@ -222,41 +253,32 @@
                 
                 let textoHTML = `<div>${dados.response.cabecalho || dados.response.erro}</div>`;
 
-                // CRIAÇÃO DO VISUAL DE TABELA DIVIDIDA
                 if (dados.response.encontrado && !dados.response.erro) {
-                    const infraCol = dados.response.infra && dados.response.infra.length > 0 ? dados.response.infra.join('') : '<p style="font-size: 0.8rem; color: var(--text-muted); text-align:center; margin-top:10px;">Sem cobertura INFRA</p>';
-                    const txCol = dados.response.tx && dados.response.tx.length > 0 ? dados.response.tx.join('') : '<p style="font-size: 0.8rem; color: var(--text-muted); text-align:center; margin-top:10px;">Sem cobertura TX</p>';
-
+                    const infraCol = dados.response.infra && dados.response.infra.length > 0 ? dados.response.infra.join('') : '<p style="font-size:0.8rem; color:var(--text-muted); text-align:center;">Sem cobertura</p>';
+                    const txCol = dados.response.tx && dados.response.tx.length > 0 ? dados.response.tx.join('') : '<p style="font-size:0.8rem; color:var(--text-muted); text-align:center;">Sem cobertura</p>';
                     textoHTML += `
                     <div style="display: flex; gap: 15px; margin-top: 15px;">
                         <div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
-                            <h4 style="color: var(--primary); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;">
-                                <i class="fa-solid fa-server"></i> INFRA
-                            </h4>
+                            <h4 style="color: var(--primary); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-server"></i> INFRA</h4>
                             <div style="font-size: 0.85rem;">${infraCol}</div>
                         </div>
-                        
                         <div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
-                            <h4 style="color: var(--warning); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;">
-                                <i class="fa-solid fa-satellite-dish"></i> TX
-                            </h4>
+                            <h4 style="color: var(--warning); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-satellite-dish"></i> TX</h4>
                             <div style="font-size: 0.85rem;">${txCol}</div>
                         </div>
                     </div>`;
                 }
-
                 chatArea.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message" style="width:100%; max-width:100%;">${textoHTML}</div></div>`;
                 chatArea.scrollTop = chatArea.scrollHeight;
-                atualizarHistorico(); // Força atualização da lateral
-
+                atualizarHistorico();
             } catch (erro) {
                 document.getElementById(idCarregando).remove();
-                chatArea.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message" style="color:var(--warning)">Erro ao consultar o servidor.</div></div>`;
+                chatArea.innerHTML += `<div class="message-wrapper system"><div class="message" style="color:var(--warning)">Erro de servidor.</div></div>`;
             }
         }
         document.getElementById('siglaInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') realizarBusca(); });
 
-        // Admin & Uploads
+        // ADMIN E UPLOADS
         async function fazerLoginAdmin() {
             const u = document.getElementById('usuarioAdmin').value;
             const p = document.getElementById('senhaAdmin').value;
@@ -266,51 +288,54 @@
             try {
                 const resp = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: u, senha: p }) });
                 if (resp.ok) {
-                    fecharLogin(); document.getElementById('adminModal').classList.add('active'); carregarSugestoesDoBanco(); 
+                    fecharLogin(); document.getElementById('adminModal').classList.add('active'); 
+                    carregarSugestoesDoBanco(); carregarUsuariosOnline(); // Puxa quem ta online!
                 } else { alert("Incorreto!"); }
             } catch (e) { alert("Erro de rede."); } finally { btn.innerHTML = 'Entrar no Painel'; btn.disabled = false; }
+        }
+
+        async function carregarUsuariosOnline() {
+            const container = document.getElementById('listaOnline');
+            try {
+                const r = await fetch('/admin/online'); const users = await r.json();
+                if(users.length === 0) { container.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Ninguém online</span>'; return; }
+                container.innerHTML = users.map(u => `<span style="background: var(--success); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; display:flex; align-items:center; gap:5px;"><i class="fa-solid fa-circle" style="font-size:0.5rem;"></i> ${u}</span>`).join('');
+            } catch(e) {}
         }
 
         async function enviarPlanilha(tipo) {
             const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala';
             const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala';
             const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala';
-            const labelOriginal = tipo === 'sites' ? 'Sincronizar Sites' : 'Sincronizar Escala';
-            
-            const fileInput = document.getElementById(inputId);
-            const btn = document.getElementById(btnId);
-
+            const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala';
+            const fileInput = document.getElementById(inputId); const btn = document.getElementById(btnId);
             if (fileInput.files.length === 0) return alert("Selecione um arquivo!");
             const formData = new FormData(); formData.append('planilha', fileInput.files[0]);
 
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...'; btn.disabled = true; btn.style.opacity = '0.7';
-
             try {
                 const resp = await fetch(rota, { method: 'POST', body: formData });
                 if (resp.ok) {
-                    btn.style.backgroundColor = "var(--success)";
-                    btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!';
-                    fileInput.value = "";
+                    btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = "";
                     setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000);
-                } else { throw new Error(); }
-            } catch (e) { alert("Erro ao enviar."); btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; }
+                } else throw new Error();
+            } catch (e) { alert("Erro."); btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; }
         }
 
-        // Sugestões
+        // SUGESTÕES
         async function enviarSugestaoDireta() {
-            const txt = document.getElementById('textoSolicitacao').value;
-            const btn = document.getElementById('btnEnviarSugestao');
-            if(!txt) return;
-            btn.innerHTML = 'Enviando...';
-            await fetch('/sugestoes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: document.getElementById('nomeUsuario').value||'Anon', texto: txt }) });
+            const txt = document.getElementById('textoSolicitacao').value; const btn = document.getElementById('btnEnviarSugestao');
+            if(!txt) return; btn.innerHTML = 'Enviando...'; btn.disabled=true;
+            await fetch('/sugestoes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: meuNome, texto: txt }) });
             document.getElementById('textoSolicitacao').value = ""; btn.innerHTML = 'Enviado!'; btn.style.backgroundColor = "var(--success)";
-            setTimeout(() => { btn.innerHTML = 'Enviar Solicitação'; btn.style.backgroundColor = "var(--primary)"; }, 3000);
+            setTimeout(() => { btn.innerHTML = 'Enviar Solicitação'; btn.style.backgroundColor = "var(--primary)"; btn.disabled=false; }, 3000);
         }
 
         async function carregarSugestoesDoBanco() {
             const lst = document.getElementById('listaSugestoes'); lst.innerHTML = "Carregando...";
             const resp = await fetch('/admin/listar-sugestoes'); const s = await resp.json();
-            lst.innerHTML = s.map(x => `<div style="background:var(--bg-app); padding:10px; border:1px solid var(--border); border-radius:8px;"><b style="color:var(--primary);">${x.usuario}</b> <span style="font-size:0.75rem; color:var(--text-muted);">${x.data}</span><p style="margin-top:5px; font-size:0.85rem;">${x.texto}</p></div>`).join('');
+            if(s.length === 0) { lst.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Caixa vazia</span>'; return; }
+            lst.innerHTML = s.map(x => `<div style="background:var(--bg-panel); padding:10px; border-left:3px solid var(--warning); border-radius:6px;"><b style="color:var(--primary); font-size:0.85rem;">${x.usuario}</b> <span style="font-size:0.75rem; color:var(--text-muted); margin-left:5px;">${x.data}</span><p style="margin-top:5px; font-size:0.85rem;">${x.texto}</p></div>`).join('');
         }
     </script>
 </body>
