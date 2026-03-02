@@ -5,7 +5,6 @@ import pandas as pd
 from datetime import datetime
 from thefuzz import process
 
-# Link do Neon.tech configurado nas variáveis do Render
 DB_URL = os.getenv("DATABASE_URL")
 
 LEGENDA_HORARIOS = {
@@ -32,15 +31,28 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (
-        sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, cm_responsavel TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS escala (
-        id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, 
-        supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS sugestoes (
-        id SERIAL PRIMARY KEY, usuario TEXT, texto TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS sites (sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, cm_responsavel TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS escala (id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS sugestoes (id SERIAL PRIMARY KEY, usuario TEXT, texto TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS historico (id SERIAL PRIMARY KEY, sigla TEXT, status TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     conn.commit()
     conn.close()
+
+# --- GRAVAÇÃO DO HISTÓRICO ONLINE ---
+def save_historico(sigla, status):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO historico (sigla, status) VALUES (%s, %s)", (sigla, status))
+    conn.commit()
+    conn.close()
+
+def get_historico():
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT sigla, status, data FROM historico ORDER BY data DESC LIMIT 10")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"sigla": r['sigla'], "status": r['status'], "tempo": r['data'].strftime('%H:%M')} for r in rows]
 
 def save_suggestion(usuario, texto):
     conn = get_connection()
@@ -57,10 +69,10 @@ def get_suggestions():
     conn.close()
     return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
 
+# --- PROCESSAMENTO EXCEL (MANTIDO) ---
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
     df.columns = [str(c).strip().upper().replace(' ', '') for c in df.columns]
-    
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     col_nome = next((c for c in df.columns if 'NOME' in c or 'LOCAL' in c), None)
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
@@ -68,7 +80,6 @@ def process_excel_sites(file_path):
 
     conn = get_connection()
     cursor = conn.cursor()
-    
     dados_dict = {}
     for _, row in df.iterrows():
         sigla = str(row.get(col_sigla, '')).strip().upper()
@@ -82,19 +93,15 @@ def process_excel_sites(file_path):
     dados_insercao = list(dados_dict.values())
     if dados_insercao:
         execute_values(cursor, """
-            INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) 
-            VALUES %s 
-            ON CONFLICT (sigla) DO UPDATE SET 
-            nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, cm_responsavel=EXCLUDED.cm_responsavel
+            INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) VALUES %s 
+            ON CONFLICT (sigla) DO UPDATE SET nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, cm_responsavel=EXCLUDED.cm_responsavel
         """, dados_insercao)
-        
     conn.commit()
     conn.close()
 
 def process_excel_escala(file_path):
     xl = pd.ExcelFile(file_path, engine='openpyxl')
     mes_ano = datetime.now().strftime('%m-%Y')
-    
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM escala")
@@ -105,7 +112,6 @@ def process_excel_escala(file_path):
 
     for aba in abas_alvo:
         df = xl.parse(aba, dtype=str).fillna('')
-        
         header_row = []
         df_dados = df
         
@@ -132,8 +138,7 @@ def process_excel_escala(file_path):
             elif 'SEGMENTO' in v_str: seg_idx = i
             else:
                 dia_limpo = None
-                if isinstance(val, (datetime, pd.Timestamp)):
-                    dia_limpo = str(val.day)
+                if isinstance(val, (datetime, pd.Timestamp)): dia_limpo = str(val.day)
                 elif v_str.endswith('00:00:00'):
                     try: dia_limpo = str(pd.to_datetime(v_str).day)
                     except: pass
@@ -162,25 +167,19 @@ def process_excel_escala(file_path):
                         chave_unica = f"{aba}_{tec}_{d_limpo}_{mes_ano}"
                         if chave_unica not in chaves_vistas:
                             chaves_vistas.add(chave_unica)
-                            all_rows.append((
-                                str(aba).upper(), tec, contato, supervisor, cm, segmento, d_limpo, mes_ano, plantao_val
-                            ))
+                            all_rows.append((str(aba).upper(), tec, contato, supervisor, cm, segmento, d_limpo, mes_ano, plantao_val))
 
     if all_rows:
-        execute_values(cursor, """
-            INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, segmento, dia_mes, mes_ano, horario) 
-            VALUES %s
-        """, all_rows)
-    
+        execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, segmento, dia_mes, mes_ano, horario) VALUES %s", all_rows)
     conn.commit()
     conn.close()
 
+# --- BUSCA INTELIGENTE ---
 def query_data(user_text, data_consulta=None):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
     
-    # Lógica que resolve o dia 2 de Março. Se "2/3" for recebido, usa "2".
     dia_alvo = data_consulta.split('/')[0] if data_consulta else str(hoje.day)
     mes_alvo = data_consulta.split('/')[1] if data_consulta and '/' in data_consulta else str(hoje.month)
     
@@ -196,37 +195,32 @@ def query_data(user_text, data_consulta=None):
         cm_banco = site.get('cm_responsavel', '').strip()
         cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match[:3]
         
-        cursor.execute("""
-            SELECT * FROM escala 
-            WHERE ddd_aba LIKE %s AND cm ILIKE %s AND dia_mes = %s
-        """, (f"%{site['ddd']}%", f"%{cm_busca}%", dia_alvo))
-        
+        cursor.execute("SELECT * FROM escala WHERE ddd_aba LIKE %s AND cm ILIKE %s AND dia_mes = %s", (f"%{site['ddd']}%", f"%{cm_busca}%", dia_alvo))
         plantoes = cursor.fetchall()
         conn.close()
 
         resposta = {
             "encontrado": True,
             "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}",
-            "infra": [],
-            "tx": []
+            "infra": [], "tx": []
         }
         
         if plantoes:
+            save_historico(match, "Plantonista localizado") # Grava no histórico lateral
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
-                tec_info = f"👨‍🔧 <b>{p['tecnico']}</b><br>⏰ {h_fmt}<br>"
-                if p['segmento'] and p['segmento'] != 'Não especificado':
-                    tec_info += f"⚙️ {p['segmento']}<br>"
-                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}<hr style='border-top:1px dashed #334155; margin:8px 0;'>"
+                tec_info = f"<div style='margin-bottom: 10px;'><b style='color:white;'>👨‍🔧 {p['tecnico']}</b><br>⏰ {h_fmt}<br>"
+                if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
+                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 
-                if 'INFRA' in p['segmento'].upper():
-                    resposta["infra"].append(tec_info)
-                else:
-                    resposta["tx"].append(tec_info)
+                if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
+                else: resposta["tx"].append(tec_info)
         else:
+             save_historico(match, "Sem cobertura") # Grava no histórico lateral
              resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje."
              
         return resposta
     
     conn.close()
+    save_historico(user_text.upper()[:10], "Não encontrada") # Limita a 10 char pra nao zoar o banco
     return {"encontrado": False, "erro": "Sigla não encontrada no banco de dados."}
