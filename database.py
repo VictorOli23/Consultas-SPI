@@ -41,6 +41,29 @@ def init_db():
     except: pass
     conn.close()
 
+# --- NOVO: COLETA DADOS PARA O AUTOCOMPLETE ---
+def get_autocomplete_data():
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Pega os Sites
+    cursor.execute("SELECT sigla, nome_da_localidade FROM sites")
+    sites = cursor.fetchall()
+    
+    # Pega as Bases (CM)
+    cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
+    bases = cursor.fetchall()
+    
+    conn.close()
+    
+    resultado = []
+    for s in sites:
+        resultado.append({"termo": s['sigla'], "detalhe": s['nome_da_localidade'], "tipo": "📍 Site"})
+    for b in bases:
+        if b['cm']: resultado.append({"termo": b['cm'], "detalhe": "Região Inteira", "tipo": "🗺️ Base"})
+        
+    return resultado
+
 def get_all_tecnicos():
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -59,7 +82,6 @@ def ping_user(nome):
 def get_online_users():
     conn = get_connection()
     cursor = conn.cursor()
-    # Verifica quem deu ping nos últimos 2 minutos baseado no relógio interno do Postgres (UTC)
     cursor.execute("SELECT nome FROM usuarios_online WHERE ultima_atividade >= NOW() - INTERVAL '2 minutes'")
     rows = cursor.fetchall()
     conn.close()
@@ -78,17 +100,10 @@ def get_historico():
     cursor.execute("SELECT usuario, sigla, status, data FROM historico ORDER BY data DESC LIMIT 15")
     rows = cursor.fetchall()
     conn.close()
-    
     resultados = []
     for r in rows:
-        # A MÁGICA DO FUSO HORÁRIO: Subtrai 3 horas do horário UTC do servidor
         hora_br = r['data'] - timedelta(hours=3)
-        resultados.append({
-            "usuario": r['usuario'], 
-            "sigla": r['sigla'], 
-            "status": r['status'], 
-            "tempo": hora_br.strftime('%H:%M')
-        })
+        resultados.append({"usuario": r['usuario'], "sigla": r['sigla'], "status": r['status'], "tempo": hora_br.strftime('%H:%M')})
     return resultados
 
 def save_suggestion(usuario, texto):
@@ -104,16 +119,10 @@ def get_suggestions():
     cursor.execute("SELECT usuario, texto, data FROM sugestoes ORDER BY data DESC")
     rows = cursor.fetchall()
     conn.close()
-    
     resultados = []
     for r in rows:
-        # A MÁGICA DO FUSO HORÁRIO PARA AS SUGESTÕES
         hora_br = r['data'] - timedelta(hours=3)
-        resultados.append({
-            "usuario": r['usuario'], 
-            "texto": r['texto'], 
-            "data": hora_br.strftime('%d/%m/%Y %H:%M')
-        })
+        resultados.append({"usuario": r['usuario'], "texto": r['texto'], "data": hora_br.strftime('%d/%m/%Y %H:%M')})
     return resultados
 
 def process_excel_sites(file_path):
@@ -124,13 +133,11 @@ def process_excel_sites(file_path):
 
     for sheet in xl.sheet_names:
         df = xl.parse(sheet, dtype=str).fillna('')
-        
         header_idx = -1
         for i, row in df.iterrows():
             row_str = " ".join([str(v).upper() for v in row.values])
             if 'SIGLA' in row_str:
-                header_idx = i
-                break
+                header_idx = i; break
                 
         if header_idx != -1:
             df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.iloc[header_idx]]
@@ -162,8 +169,6 @@ def process_excel_sites(file_path):
 
 def process_excel_escala(file_path):
     xl = pd.ExcelFile(file_path, engine='openpyxl')
-    
-    # Fuso horário na gravação da escala
     hoje_br = datetime.now() - timedelta(hours=3)
     mes_ano = hoje_br.strftime('%m-%Y')
     
@@ -233,17 +238,12 @@ def process_excel_escala(file_path):
     conn.commit()
     conn.close()
 
-
 def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # RELÓGIO AJUSTADO: Se baseia no horário de Brasília para buscar o plantão correto
     hoje = datetime.now() - timedelta(hours=3)
-    
     dia_alvo = data_consulta.split('/')[0] if data_consulta else str(hoje.day)
     mes_alvo = data_consulta.split('/')[1] if data_consulta and '/' in data_consulta else str(hoje.month)
-    
     termo = user_text.strip().upper()
 
     cursor.execute("SELECT DISTINCT ddd_aba FROM escala WHERE ddd_aba ILIKE %s", (f"%{termo}%",))
@@ -252,21 +252,17 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     if abas_encontradas and "CAS" in termo:
         cursor.execute("SELECT * FROM escala WHERE ddd_aba IN %s AND dia_mes = %s", (tuple(abas_encontradas), dia_alvo))
         plantoes = cursor.fetchall()
-        
         if plantoes:
             resposta = {"encontrado": True, "cabecalho": f"📍 <b>Planilha(s): {', '.join(abas_encontradas)}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas desta aba", "infra": [], "tx": []}
             save_historico(nome_usuario, termo, "Localizado (Planilha)")
-            
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
                 nome_base_visual = f" <span style='font-size:0.75rem; color:var(--warning);'>({p['cm']})</span>" if p['cm'] else ""
-                
                 tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']}{nome_base_visual} <i class='fa-solid fa-share-from-square' style='font-size:0.85em;'></i></span><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
-                
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
             conn.close()
@@ -274,13 +270,11 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
 
     cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
     bases_db = [r['cm'] for r in cursor.fetchall()]
-    
     match_base = process.extractOne(termo, bases_db)
     if match_base and match_base[1] >= 85: 
         cm_busca = match_base[0]
         cursor.execute("SELECT * FROM escala WHERE cm = %s AND dia_mes = %s", (cm_busca, dia_alvo))
         plantoes = cursor.fetchall()
-        
         if plantoes:
             resposta = {"encontrado": True, "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região", "infra": [], "tx": []}
             save_historico(nome_usuario, cm_busca, "Localizado (Região)")
@@ -288,11 +282,9 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
-                
                 tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
-                
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
             conn.close()
@@ -301,7 +293,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
-    
     match_sigla = process.extractOne(termo, siglas)
     if match_sigla and match_sigla[1] > 80:
         site = next((s for s in sites_db if s['sigla'] == match_sigla[0]), None)
@@ -311,7 +302,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
         cursor.execute("SELECT * FROM escala WHERE cm ILIKE %s AND dia_mes = %s", (f"%{cm_busca}%", dia_alvo))
         plantoes = cursor.fetchall()
         conn.close()
-
         resposta = {"encontrado": True, "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}", "infra": [], "tx": []}
         
         if plantoes:
@@ -320,11 +310,9 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
-                
                 tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
-                
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
         else:
