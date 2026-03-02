@@ -38,7 +38,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- GRAVAÇÃO DO HISTÓRICO ONLINE ---
+# --- FUNÇÕES DE HISTÓRICO ---
 def save_historico(sigla, status):
     conn = get_connection()
     cursor = conn.cursor()
@@ -49,11 +49,12 @@ def save_historico(sigla, status):
 def get_historico():
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT sigla, status, data FROM historico ORDER BY data DESC LIMIT 10")
+    cursor.execute("SELECT sigla, status, data FROM historico ORDER BY data DESC LIMIT 15")
     rows = cursor.fetchall()
     conn.close()
     return [{"sigla": r['sigla'], "status": r['status'], "tempo": r['data'].strftime('%H:%M')} for r in rows]
 
+# --- FUNÇÕES DE SUGESTÃO ---
 def save_suggestion(usuario, texto):
     conn = get_connection()
     cursor = conn.cursor()
@@ -69,7 +70,7 @@ def get_suggestions():
     conn.close()
     return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
 
-# --- PROCESSAMENTO EXCEL (MANTIDO) ---
+# --- PROCESSAMENTO EXCEL ---
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
     df.columns = [str(c).strip().upper().replace(' ', '') for c in df.columns]
@@ -206,21 +207,21 @@ def query_data(user_text, data_consulta=None):
         }
         
         if plantoes:
-            save_historico(match, "Plantonista localizado") # Grava no histórico lateral
+            save_historico(match, "Plantonista localizado")
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_info = f"<div style='margin-bottom: 10px;'><b style='color:white;'>👨‍🔧 {p['tecnico']}</b><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
-                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
+                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed #334155; margin:8px 0;'>"
                 
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
         else:
-             save_historico(match, "Sem cobertura") # Grava no histórico lateral
+             save_historico(match, "Sem cobertura")
              resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje."
              
         return resposta
     
     conn.close()
-    save_historico(user_text.upper()[:10], "Não encontrada") # Limita a 10 char pra nao zoar o banco
+    save_historico(user_text.upper()[:10], "Não encontrada")
     return {"encontrado": False, "erro": "Sigla não encontrada no banco de dados."}
