@@ -1,7 +1,7 @@
 import os
 from flask import Flask, render_template, request, jsonify, session
 from werkzeug.utils import secure_filename
-from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico, ping_user, get_online_users, get_all_tecnicos
+from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico, ping_user, get_online_users, get_all_tecnicos, get_autocomplete_data
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chave_secreta_spi_2026")
@@ -20,14 +20,15 @@ def chat():
     user_input = dados.get("message")
     data_consulta = dados.get("data")
     nome_usuario = dados.get("nome", "Anônimo")
-    
-    if not user_input:
-        return jsonify({"error": "Mensagem vazia"}), 400
-
+    if not user_input: return jsonify({"error": "Mensagem vazia"}), 400
     resultado = query_data(user_input, data_consulta, nome_usuario)
     return jsonify({"response": resultado})
 
-# --- ROTA DOS TÉCNICOS PARA AS MÁSCARAS ---
+# --- ROTA NOVA DO AUTOCOMPLETE ---
+@app.route("/autocomplete", methods=["GET"])
+def autocomplete():
+    return jsonify(get_autocomplete_data())
+
 @app.route("/tecnicos", methods=["GET"])
 def tecnicos():
     return jsonify(get_all_tecnicos())
@@ -73,8 +74,11 @@ def upload_sites():
     if file:
         filepath = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
         file.save(filepath)
-        process_excel_sites(filepath)
-        return jsonify({"mensagem": "Sites atualizados!"}), 200
+        try:
+            process_excel_sites(filepath)
+            return jsonify({"mensagem": "Sites atualizados!"}), 200
+        except Exception as e:
+            return jsonify({"erro": f"Erro interno: {str(e)}"}), 500
     return jsonify({"erro": "Nenhum arquivo"}), 400
 
 @app.route("/upload_escala", methods=["POST"])
@@ -84,8 +88,11 @@ def upload_escala():
     if file:
         filepath = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
         file.save(filepath)
-        process_excel_escala(filepath)
-        return jsonify({"mensagem": "Escala atualizada!"}), 200
+        try:
+            process_excel_escala(filepath)
+            return jsonify({"mensagem": "Escala atualizada!"}), 200
+        except Exception as e:
+            return jsonify({"erro": f"Erro interno: {str(e)}"}), 500
     return jsonify({"erro": "Nenhum arquivo"}), 400
 
 if __name__ == "__main__":
