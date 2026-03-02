@@ -41,17 +41,14 @@ def init_db():
     except: pass
     conn.close()
 
-# --- NOVO: BUSCADOR DE TÉCNICOS PARA AS MÁSCARAS ---
 def get_all_tecnicos():
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Busca todos os técnicos cadastrados na escala (ignorando duplicados)
     cursor.execute("SELECT DISTINCT tecnico, contato_corp FROM escala WHERE tecnico != '' ORDER BY tecnico ASC")
     rows = cursor.fetchall()
     conn.close()
     return [{"nome": r['tecnico'], "contato": r['contato_corp']} for r in rows]
 
-# --- USUÁRIOS ONLINE ---
 def ping_user(nome):
     conn = get_connection()
     cursor = conn.cursor()
@@ -70,7 +67,6 @@ def get_online_users():
     conn.close()
     return [r[0] for r in rows]
 
-# --- HISTÓRICO E SUGESTÕES ---
 def save_historico(usuario, sigla, status):
     conn = get_connection()
     cursor = conn.cursor()
@@ -101,7 +97,6 @@ def get_suggestions():
     conn.close()
     return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
 
-# --- PROCESSAMENTO EXCEL ---
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
     df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.columns]
@@ -236,9 +231,18 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             save_historico(nome_usuario, match, "Localizado")
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
-                tec_info = f"<div style='margin-bottom: 10px;'><b style='color:white;'>👨‍🔧 {p['tecnico']}</b><br>⏰ {h_fmt}<br>"
+                
+                # --- A MÁGICA ESTÁ AQUI: Nome clicável que chama a máscara! ---
+                tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
+                contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
+                
+                tec_info = f"<div style='margin-bottom: 10px;'>"
+                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara com este Técnico'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
+                tec_info += f"⏰ {h_fmt}<br>"
+                
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
+                
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
         else:
