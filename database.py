@@ -52,10 +52,7 @@ def get_all_tecnicos():
 def ping_user(nome):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO usuarios_online (nome, ultima_atividade) VALUES (%s, CURRENT_TIMESTAMP)
-        ON CONFLICT (nome) DO UPDATE SET ultima_atividade = CURRENT_TIMESTAMP
-    """, (nome,))
+    cursor.execute("INSERT INTO usuarios_online (nome, ultima_atividade) VALUES (%s, CURRENT_TIMESTAMP) ON CONFLICT (nome) DO UPDATE SET ultima_atividade = CURRENT_TIMESTAMP", (nome,))
     conn.commit()
     conn.close()
 
@@ -98,35 +95,46 @@ def get_suggestions():
     return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
 
 def process_excel_sites(file_path):
-    df = pd.read_excel(file_path).fillna('')
-    df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.columns]
-    col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
-    col_nome = next((c for c in df.columns if c == 'NOMEDALOCALIDADE'), None)
-    if not col_nome: col_nome = next((c for c in df.columns if 'MUNIC' in c), None)
-    if not col_nome: col_nome = next((c for c in df.columns if 'CIDAD' in c), None)
-    if not col_nome: col_nome = next((c for c in df.columns if 'LOCALIDAD' in c), None)
-    if not col_nome: col_nome = next((c for c in df.columns if 'NOME' in c), None)
-    col_ddd = next((c for c in df.columns if 'DDD' in c), None)
-    col_cm = next((c for c in df.columns if 'CX' in c or 'TX' in c or 'CM' in c), None)
-
+    xl = pd.ExcelFile(file_path)
     conn = get_connection()
     cursor = conn.cursor()
     dados_dict = {}
-    for _, row in df.iterrows():
-        sigla = str(row.get(col_sigla, '')).strip().upper()
-        if sigla and sigla not in ['NAN', 'NONE', 'SIGLA', '']:
-            nome = str(row.get(col_nome, '')).replace('nan', '').strip()
-            if nome.endswith('.0'): nome = nome[:-2]
-            ddd = str(row.get(col_ddd, '')).replace('.0', '').replace('nan', '').strip()
-            cm = str(row.get(col_cm, '')).replace('nan', '').strip().upper()
-            dados_dict[sigla] = (sigla, nome, ddd, cm)
+
+    for sheet in xl.sheet_names:
+        df = xl.parse(sheet, dtype=str).fillna('')
+        
+        header_idx = -1
+        for i, row in df.iterrows():
+            row_str = " ".join([str(v).upper() for v in row.values])
+            if 'SIGLA' in row_str:
+                header_idx = i
+                break
+                
+        if header_idx != -1:
+            df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.iloc[header_idx]]
+            df = df.iloc[header_idx + 1:]
+        else:
+            df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.columns]
+
+        if 'SIGLA' not in df.columns: continue
+        
+        col_sigla = 'SIGLA'
+        col_nome = 'NOMEDALOCALIDADE' if 'NOMEDALOCALIDADE' in df.columns else next((c for c in df.columns if 'MUNIC' in c or 'CIDAD' in c or 'LOCAL' in c or 'NOME' in c), None)
+        col_ddd = next((c for c in df.columns if 'DDD' in c), None)
+        col_cm = next((c for c in df.columns if c in ['CM', 'CX', 'TX', 'CMRESPONSAVEL', 'BASE']), None)
+
+        for _, row in df.iterrows():
+            sigla = str(row.get(col_sigla, '')).strip().upper()
+            if sigla and sigla not in ['NAN', 'NONE', 'SIGLA', '']:
+                nome = str(row.get(col_nome, '')).replace('nan', '').strip() if col_nome else ''
+                if nome.endswith('.0'): nome = nome[:-2]
+                ddd = str(row.get(col_ddd, '')).replace('.0', '').replace('nan', '').strip() if col_ddd else ''
+                cm = str(row.get(col_cm, '')).replace('nan', '').strip().upper() if col_cm else ''
+                if len(sigla) <= 10: dados_dict[sigla] = (sigla, nome, ddd, cm)
 
     dados_insercao = list(dados_dict.values())
     if dados_insercao:
-        execute_values(cursor, """
-            INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) VALUES %s 
-            ON CONFLICT (sigla) DO UPDATE SET nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, cm_responsavel=EXCLUDED.cm_responsavel
-        """, dados_insercao)
+        execute_values(cursor, "INSERT INTO sites (sigla, nome_da_localidade, ddd, cm_responsavel) VALUES %s ON CONFLICT (sigla) DO UPDATE SET nome_da_localidade=EXCLUDED.nome_da_localidade, ddd=EXCLUDED.ddd, cm_responsavel=EXCLUDED.cm_responsavel", dados_insercao)
     conn.commit()
     conn.close()
 
@@ -137,11 +145,12 @@ def process_excel_escala(file_path):
     cursor = conn.cursor()
     cursor.execute("DELETE FROM escala")
     
-    abas_alvo = [s for s in xl.sheet_names if any(char.isdigit() for char in s)]
+    abas_alvo = xl.sheet_names
     chaves_vistas = set()
     all_rows = []
 
     for aba in abas_alvo:
+        if aba.strip().upper() in ['LEGENDA', 'INSTRUÇÕES', 'RESUMO', 'MENU']: continue
         df = xl.parse(aba, dtype=str).fillna('')
         header_row = []
         df_dados = df
@@ -162,7 +171,8 @@ def process_excel_escala(file_path):
             if 'FUNCION' in v_str: tec_idx = i
             elif 'CONTATO' in v_str: contato_idx = i
             elif 'SUPERV' in v_str: sup_idx = i
-            elif 'CM' == v_str: cm_idx = i
+            # Nova trava de segurança para achar a coluna CM mesmo se estiver nomeada como AREA, BASE ou com espaços
+            elif v_str in ['CM', 'BASE', 'AREA', 'ÁREA'] or v_str == 'CM_RESPONSAVEL': cm_idx = i
             elif 'SEGMENTO' in v_str: seg_idx = i
             else:
                 dia_limpo = None
@@ -184,6 +194,7 @@ def process_excel_escala(file_path):
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
             segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não especificado'
+            
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
                     plantao_val = str(row_vals[d_idx]).strip().upper()
@@ -197,6 +208,8 @@ def process_excel_escala(file_path):
     conn.commit()
     conn.close()
 
+
+# --- NOVO MOTOR DE BUSCA DUPLA (ACEITA SIGLA E NOME DA BASE) ---
 def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -205,51 +218,82 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     dia_alvo = data_consulta.split('/')[0] if data_consulta else str(hoje.day)
     mes_alvo = data_consulta.split('/')[1] if data_consulta and '/' in data_consulta else str(hoje.month)
     
-    cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
-    sites_db = cursor.fetchall()
-    siglas = [r['sigla'] for r in sites_db]
+    termo = user_text.strip().upper()
+
+    # 1. TENTA ACHAR COMO NOME DE BASE DIRETO (Ex: Usuário digitou METROPOLITANA)
+    cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
+    bases_db = [r['cm'] for r in cursor.fetchall()]
     
-    match_data = process.extractOne(user_text.upper(), siglas)
-    match = match_data[0] if match_data and match_data[1] > 80 else None
-
-    if match:
-        site = next((s for s in sites_db if s['sigla'] == match), None)
-        cm_banco = site.get('cm_responsavel', '').strip()
-        cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match[:3]
-        
-        cursor.execute("SELECT * FROM escala WHERE ddd_aba LIKE %s AND cm ILIKE %s AND dia_mes = %s", (f"%{site['ddd']}%", f"%{cm_busca}%", dia_alvo))
+    match_base = process.extractOne(termo, bases_db)
+    if match_base and match_base[1] >= 85: # Se tiver 85% de certeza que ele digitou a região
+        cm_busca = match_base[0]
+        cursor.execute("SELECT * FROM escala WHERE cm = %s AND dia_mes = %s", (cm_busca, dia_alvo))
         plantoes = cursor.fetchall()
-        conn.close()
-
-        resposta = {
-            "encontrado": True,
-            "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}",
-            "infra": [], "tx": []
-        }
         
         if plantoes:
-            save_historico(nome_usuario, match, "Localizado")
+            resposta = {
+                "encontrado": True,
+                "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região",
+                "infra": [], "tx": []
+            }
+            save_historico(nome_usuario, cm_busca, "Localizado (Região)")
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
-                
-                # --- A MÁGICA ESTÁ AQUI: Nome clicável que chama a máscara! ---
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
                 
                 tec_info = f"<div style='margin-bottom: 10px;'>"
                 tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara com este Técnico'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
                 tec_info += f"⏰ {h_fmt}<br>"
+                if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
+                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 
+                if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
+                else: resposta["tx"].append(tec_info)
+            conn.close()
+            return resposta
+
+    # 2. SE NÃO FOR BASE, TENTA ACHAR COMO SIGLA (Ex: Usuário digitou SJV)
+    cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
+    sites_db = cursor.fetchall()
+    siglas = [r['sigla'] for r in sites_db]
+    
+    match_sigla = process.extractOne(termo, siglas)
+    if match_sigla and match_sigla[1] > 80:
+        site = next((s for s in sites_db if s['sigla'] == match_sigla[0]), None)
+        cm_banco = site.get('cm_responsavel', '').strip()
+        cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match_sigla[0][:3]
+        
+        cursor.execute("SELECT * FROM escala WHERE cm ILIKE %s AND dia_mes = %s", (f"%{cm_busca}%", dia_alvo))
+        plantoes = cursor.fetchall()
+        conn.close()
+
+        resposta = {
+            "encontrado": True,
+            "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}",
+            "infra": [], "tx": []
+        }
+        
+        if plantoes:
+            save_historico(nome_usuario, match_sigla[0], "Localizado")
+            for p in plantoes:
+                h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
+                tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
+                contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
+                
+                tec_info = f"<div style='margin-bottom: 10px;'>"
+                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara com este Técnico'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
+                tec_info += f"⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
         else:
-             save_historico(nome_usuario, match, "Sem cobertura")
+             save_historico(nome_usuario, match_sigla[0], "Sem cobertura")
              resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje."
         return resposta
     
     conn.close()
-    save_historico(nome_usuario, user_text.upper()[:10], "Inválido")
-    return {"encontrado": False, "erro": "Sigla não encontrada."}
+    save_historico(nome_usuario, termo[:10], "Inválido")
+    return {"encontrado": False, "erro": "Sigla ou Base não encontrada no banco de dados."}
