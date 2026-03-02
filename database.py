@@ -37,13 +37,19 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS sugestoes (id SERIAL PRIMARY KEY, usuario TEXT, texto TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS historico (id SERIAL PRIMARY KEY, usuario TEXT, sigla TEXT, status TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios_online (nome TEXT PRIMARY KEY, ultima_atividade TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Atualiza a tabela histórico antiga se não tiver a coluna usuario
-    try:
-        cursor.execute("ALTER TABLE historico ADD COLUMN IF NOT EXISTS usuario TEXT DEFAULT 'Anônimo'")
+    try: cursor.execute("ALTER TABLE historico ADD COLUMN IF NOT EXISTS usuario TEXT DEFAULT 'Anônimo'")
     except: pass
-    
     conn.close()
+
+# --- NOVO: BUSCADOR DE TÉCNICOS PARA AS MÁSCARAS ---
+def get_all_tecnicos():
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    # Busca todos os técnicos cadastrados na escala (ignorando duplicados)
+    cursor.execute("SELECT DISTINCT tecnico, contato_corp FROM escala WHERE tecnico != '' ORDER BY tecnico ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"nome": r['tecnico'], "contato": r['contato_corp']} for r in rows]
 
 # --- USUÁRIOS ONLINE ---
 def ping_user(nome):
@@ -59,7 +65,6 @@ def ping_user(nome):
 def get_online_users():
     conn = get_connection()
     cursor = conn.cursor()
-    # Pega quem pingou nos últimos 2 minutos
     cursor.execute("SELECT nome FROM usuarios_online WHERE ultima_atividade >= NOW() - INTERVAL '2 minutes'")
     rows = cursor.fetchall()
     conn.close()
@@ -96,21 +101,16 @@ def get_suggestions():
     conn.close()
     return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
 
-# --- PROCESSAMENTO EXCEL (CORRIGIDO PARA ACHAR CIDADE) ---
+# --- PROCESSAMENTO EXCEL ---
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
-    # Limpeza bruta do cabeçalho
     df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.columns]
-    
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
-    
-    # 🚨 INTELIGÊNCIA MÁXIMA: Procura exatamente a coluna NOMEDALOCALIDADE primeiro
     col_nome = next((c for c in df.columns if c == 'NOMEDALOCALIDADE'), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'MUNIC' in c), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'CIDAD' in c), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'LOCALIDAD' in c), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'NOME' in c), None)
-    
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
     col_cm = next((c for c in df.columns if 'CX' in c or 'TX' in c or 'CM' in c), None)
 
@@ -151,8 +151,7 @@ def process_excel_escala(file_path):
         header_row = []
         df_dados = df
         
-        if any('FUNCION' in str(c).strip().upper() for c in df.columns):
-            header_row = df.columns
+        if any('FUNCION' in str(c).strip().upper() for c in df.columns): header_row = df.columns
         else:
             for i, row in df.iterrows():
                 if any('FUNCION' in str(v).strip().upper() for v in row.values):
@@ -203,7 +202,6 @@ def process_excel_escala(file_path):
     conn.commit()
     conn.close()
 
-# --- BUSCA INTELIGENTE ---
 def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
