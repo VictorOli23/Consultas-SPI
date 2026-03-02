@@ -1,7 +1,7 @@
 import os
 from flask import Flask, render_template, request, jsonify, session
 from werkzeug.utils import secure_filename
-from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico, ping_user, get_online_users
+from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico, ping_user, get_online_users, get_all_tecnicos
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chave_secreta_spi_2026")
@@ -19,7 +19,7 @@ def chat():
     dados = request.json
     user_input = dados.get("message")
     data_consulta = dados.get("data")
-    nome_usuario = dados.get("nome", "Anônimo") # Recebe quem pesquisou
+    nome_usuario = dados.get("nome", "Anônimo")
     
     if not user_input:
         return jsonify({"error": "Mensagem vazia"}), 400
@@ -27,12 +27,15 @@ def chat():
     resultado = query_data(user_input, data_consulta, nome_usuario)
     return jsonify({"response": resultado})
 
-# --- NOVAS ROTAS DE PRESENÇA (ONLINE) ---
+# --- ROTA DOS TÉCNICOS PARA AS MÁSCARAS ---
+@app.route("/tecnicos", methods=["GET"])
+def tecnicos():
+    return jsonify(get_all_tecnicos())
+
 @app.route("/ping", methods=["POST"])
 def ping():
     nome = request.json.get("nome")
-    if nome:
-        ping_user(nome)
+    if nome: ping_user(nome)
     return jsonify({"status": "ok"})
 
 @app.route("/admin/online", methods=["GET"])
