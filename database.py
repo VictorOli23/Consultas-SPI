@@ -2,7 +2,7 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from thefuzz import process
 
 DB_URL = os.getenv("DATABASE_URL")
@@ -59,6 +59,7 @@ def ping_user(nome):
 def get_online_users():
     conn = get_connection()
     cursor = conn.cursor()
+    # Verifica quem deu ping nos últimos 2 minutos baseado no relógio interno do Postgres (UTC)
     cursor.execute("SELECT nome FROM usuarios_online WHERE ultima_atividade >= NOW() - INTERVAL '2 minutes'")
     rows = cursor.fetchall()
     conn.close()
@@ -77,7 +78,18 @@ def get_historico():
     cursor.execute("SELECT usuario, sigla, status, data FROM historico ORDER BY data DESC LIMIT 15")
     rows = cursor.fetchall()
     conn.close()
-    return [{"usuario": r['usuario'], "sigla": r['sigla'], "status": r['status'], "tempo": r['data'].strftime('%H:%M')} for r in rows]
+    
+    resultados = []
+    for r in rows:
+        # A MÁGICA DO FUSO HORÁRIO: Subtrai 3 horas do horário UTC do servidor
+        hora_br = r['data'] - timedelta(hours=3)
+        resultados.append({
+            "usuario": r['usuario'], 
+            "sigla": r['sigla'], 
+            "status": r['status'], 
+            "tempo": hora_br.strftime('%H:%M')
+        })
+    return resultados
 
 def save_suggestion(usuario, texto):
     conn = get_connection()
@@ -92,7 +104,17 @@ def get_suggestions():
     cursor.execute("SELECT usuario, texto, data FROM sugestoes ORDER BY data DESC")
     rows = cursor.fetchall()
     conn.close()
-    return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
+    
+    resultados = []
+    for r in rows:
+        # A MÁGICA DO FUSO HORÁRIO PARA AS SUGESTÕES
+        hora_br = r['data'] - timedelta(hours=3)
+        resultados.append({
+            "usuario": r['usuario'], 
+            "texto": r['texto'], 
+            "data": hora_br.strftime('%d/%m/%Y %H:%M')
+        })
+    return resultados
 
 def process_excel_sites(file_path):
     xl = pd.ExcelFile(file_path)
@@ -140,7 +162,11 @@ def process_excel_sites(file_path):
 
 def process_excel_escala(file_path):
     xl = pd.ExcelFile(file_path, engine='openpyxl')
-    mes_ano = datetime.now().strftime('%m-%Y')
+    
+    # Fuso horário na gravação da escala
+    hoje_br = datetime.now() - timedelta(hours=3)
+    mes_ano = hoje_br.strftime('%m-%Y')
+    
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM escala")
@@ -208,45 +234,36 @@ def process_excel_escala(file_path):
     conn.close()
 
 
-# --- MOTOR DE BUSCA TRIPLA (ABA, BASE OU SIGLA) ---
 def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    hoje = datetime.now()
+    
+    # RELÓGIO AJUSTADO: Se baseia no horário de Brasília para buscar o plantão correto
+    hoje = datetime.now() - timedelta(hours=3)
     
     dia_alvo = data_consulta.split('/')[0] if data_consulta else str(hoje.day)
     mes_alvo = data_consulta.split('/')[1] if data_consulta and '/' in data_consulta else str(hoje.month)
     
     termo = user_text.strip().upper()
 
-    # CAMADA 1: TENTA ACHAR PELO NOME DA ABA/PLANILHA (Ex: "CAS", "19CAS")
     cursor.execute("SELECT DISTINCT ddd_aba FROM escala WHERE ddd_aba ILIKE %s", (f"%{termo}%",))
     abas_encontradas = [r['ddd_aba'] for r in cursor.fetchall()]
     
-    # Executa se a palavra "CAS" estiver na pesquisa, e encontrou alguma aba
     if abas_encontradas and "CAS" in termo:
         cursor.execute("SELECT * FROM escala WHERE ddd_aba IN %s AND dia_mes = %s", (tuple(abas_encontradas), dia_alvo))
         plantoes = cursor.fetchall()
         
         if plantoes:
-            resposta = {
-                "encontrado": True,
-                "cabecalho": f"📍 <b>Planilha(s): {', '.join(abas_encontradas)}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas desta aba",
-                "infra": [], "tx": []
-            }
+            resposta = {"encontrado": True, "cabecalho": f"📍 <b>Planilha(s): {', '.join(abas_encontradas)}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas desta aba", "infra": [], "tx": []}
             save_historico(nome_usuario, termo, "Localizado (Planilha)")
             
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
-                
-                # ADICIONA O NOME DA BASE DO LADO DO TÉCNICO PARA FACILITAR A VISUALIZAÇÃO
                 nome_base_visual = f" <span style='font-size:0.75rem; color:var(--warning);'>({p['cm']})</span>" if p['cm'] else ""
                 
-                tec_info = f"<div style='margin-bottom: 10px;'>"
-                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']}{nome_base_visual} <i class='fa-solid fa-share-from-square' style='font-size:0.85em;'></i></span><br>"
-                tec_info += f"⏰ {h_fmt}<br>"
+                tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']}{nome_base_visual} <i class='fa-solid fa-share-from-square' style='font-size:0.85em;'></i></span><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 
@@ -255,7 +272,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return resposta
 
-    # CAMADA 2: TENTA ACHAR COMO NOME DE BASE (Ex: "METROPOLITANA")
     cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
     bases_db = [r['cm'] for r in cursor.fetchall()]
     
@@ -266,20 +282,14 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
         plantoes = cursor.fetchall()
         
         if plantoes:
-            resposta = {
-                "encontrado": True,
-                "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região",
-                "infra": [], "tx": []
-            }
+            resposta = {"encontrado": True, "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região", "infra": [], "tx": []}
             save_historico(nome_usuario, cm_busca, "Localizado (Região)")
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
                 
-                tec_info = f"<div style='margin-bottom: 10px;'>"
-                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
-                tec_info += f"⏰ {h_fmt}<br>"
+                tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 
@@ -288,7 +298,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return resposta
 
-    # CAMADA 3: TENTA ACHAR COMO SIGLA (Ex: SJV)
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
@@ -303,11 +312,7 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
         plantoes = cursor.fetchall()
         conn.close()
 
-        resposta = {
-            "encontrado": True,
-            "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}",
-            "infra": [], "tx": []
-        }
+        resposta = {"encontrado": True, "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}", "infra": [], "tx": []}
         
         if plantoes:
             save_historico(nome_usuario, match_sigla[0], "Localizado")
@@ -316,9 +321,7 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
                 
-                tec_info = f"<div style='margin-bottom: 10px;'>"
-                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
-                tec_info += f"⏰ {h_fmt}<br>"
+                tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 
