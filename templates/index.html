@@ -39,7 +39,7 @@
         .system .message { background-color: var(--bg-panel); border-bottom-left-radius: 4px; border: 1px solid var(--border); }
         .user .message { background-color: var(--primary); color: #fff; border-bottom-right-radius: 4px; font-weight: 500; }
 
-        .input-area { padding: 1.5rem 2rem; background-color: var(--bg-panel); border-top: 1px solid var(--border); }
+        .input-area { padding: 1.5rem 2rem; background-color: var(--bg-panel); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
         .input-wrapper { display: flex; background-color: var(--bg-app); border: 1px solid var(--border); border-radius: 30px; padding: 0.4rem; }
         .input-wrapper input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 0 1.5rem; font-size: 1rem; outline: none; text-transform: uppercase;}
         .btn-buscar { background-color: var(--primary); color: #fff; border: none; padding: 0.8rem 2rem; border-radius: 25px; font-weight: 600; cursor: pointer; transition: 0.3s; }
@@ -65,6 +65,11 @@
         .mask-card textarea { width: 100%; font-family: 'Inter', sans-serif; font-size: 0.85rem; line-height: 1.4; border: none; background: transparent; color: var(--text-main); resize: vertical; outline: none; margin-bottom: 10px; }
         .btn-copy { background-color: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; margin-left: auto; transition: 0.2s; }
         .btn-copy:hover { background-color: var(--primary); color: white; border-color: var(--primary); }
+
+        /* Estilo do Rodapé */
+        .footer-credits { text-align: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 5px; }
+        .footer-credits a { color: var(--primary); text-decoration: none; font-weight: bold; transition: color 0.2s; }
+        .footer-credits a:hover { color: var(--primary-hover); text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -92,10 +97,15 @@
                 <div class="message">Sistema Operacional Ativo. <i class="fa-solid fa-globe" style="color: var(--primary);"></i><br><span style="color: var(--text-muted);">Informe a Sigla para consultar o plantão de hoje.</span></div>
             </div>
         </div>
+        
         <footer class="input-area">
             <div class="input-wrapper">
                 <input type="text" id="siglaInput" placeholder="Ex: SJC ou PNI..." autocomplete="off">
                 <button class="btn-buscar" id="btnBuscar" onclick="realizarBusca()">Buscar</button>
+            </div>
+            
+            <div class="footer-credits">
+                © 2026 Consultas SPI | Desenvolvido por <a href="https://github.com/VictorOli23" target="_blank"><i class="fa-brands fa-github"></i> Victor Henrique de Oliveira</a>. Todos os direitos reservados.
             </div>
         </footer>
     </main>
@@ -244,7 +254,6 @@ Observação:    </textarea>
         function trocarTema() { if (document.getElementById('temaToggle').checked) document.body.classList.add('light-mode'); else document.body.classList.remove('light-mode'); }
         function limparChat() { document.getElementById('chatArea').innerHTML = `<div class="message-wrapper system"><div class="message">Chat reiniciado.</div></div>`; }
 
-        // --- MÁSCARAS INTELIGENTES ---
         async function carregarSelectTecnicos() {
             const select = document.getElementById('selectTecnico');
             if(select.options.length <= 1) {
@@ -258,29 +267,24 @@ Observação:    </textarea>
             }
         }
 
-        // Abre pelo menu lateral
         function abrirMascaras() {
             fecharModais();
             document.getElementById('mascarasModal').classList.add('active');
             carregarSelectTecnicos();
         }
 
-        // Abre clicando direto no nome do técnico no chat (A MÁGICA)
         function abrirMascarasComTecnico(nomeTecnico, contatoTecnico) {
             fecharModais();
             document.getElementById('mascarasModal').classList.add('active');
-            carregarSelectTecnicos(); // Carrega o select no fundo por garantia
+            carregarSelectTecnicos(); 
 
             const insertValue = `Nome/Contato do Técnico: ${nomeTecnico} - ${contatoTecnico}`;
-            
             const txt1 = document.getElementById('txtAcionamento');
             txt1.value = txt1.value.replace(/Nome\/Contato do Técnico:.*/, insertValue);
-            
             const txt2 = document.getElementById('txtAtualizacao');
             txt2.value = txt2.value.replace(/Nome\/Contato do Técnico:.*/, insertValue);
         }
 
-        // Se usar o select do modal
         function atualizarMascarasPeloSelect() {
             const tech = document.getElementById('selectTecnico').value;
             const insertValue = tech ? `Nome/Contato do Técnico: ${tech}` : `Nome/Contato do Técnico:    `;
@@ -299,7 +303,6 @@ Observação:    </textarea>
             });
         }
 
-        // --- RESTANTE (CHAT, ADMIN, ETC) ---
         async function atualizarHistorico() {
             try {
                 const resp = await fetch('/historico'); const lista = await resp.json();
@@ -383,17 +386,30 @@ Observação:    </textarea>
         }
 
         async function enviarPlanilha(tipo) {
-            const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala'; const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala';
-            const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala'; const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala';
+            const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala';
+            const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala';
+            const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala';
+            const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala';
             const fileInput = document.getElementById(inputId); const btn = document.getElementById(btnId);
+            
             if (fileInput.files.length === 0) return alert("Selecione um arquivo!");
+            
             const formData = new FormData(); formData.append('planilha', fileInput.files[0]);
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...'; btn.disabled = true; btn.style.opacity = '0.7';
+            
             try {
                 const resp = await fetch(rota, { method: 'POST', body: formData });
-                if (resp.ok) { btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = ""; setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000); } 
-                else throw new Error();
-            } catch (e) { alert("Erro."); btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; }
+                const dados = await resp.json(); 
+                
+                if (resp.ok) { 
+                    btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = ""; 
+                    setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000); 
+                } 
+                else { throw new Error(dados.erro || "Erro interno do servidor"); }
+            } catch (e) { 
+                alert("Erro ao enviar: \n\n" + e.message); 
+                btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; 
+            }
         }
 
         async function enviarSugestaoDireta() {
