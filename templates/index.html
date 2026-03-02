@@ -3,21 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consultas SPI</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>Consultas SPI - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* Paleta de Cores Moderna e Reset */
+        /* Variáveis do Tema Escuro (Padrão) */
         :root {
-            --bg-dark: #0f172a;
+            --bg-app: #0f172a;
             --bg-panel: #1e293b;
+            --bg-hover: #334155;
             --primary: #0ea5e9;
             --primary-hover: #0284c7;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --border: #334155;
             --warning: #eab308;
+            --success: #22c55e;
+            --danger: #ef4444;
+        }
+
+        /* Variáveis do Tema Claro */
+        body.light-mode {
+            --bg-app: #f1f5f9;
+            --bg-panel: #ffffff;
+            --bg-hover: #e2e8f0;
+            --primary: #0284c7;
+            --primary-hover: #0369a1;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #cbd5e1;
         }
 
         * {
@@ -28,36 +43,22 @@
         }
 
         body {
-            background-color: var(--bg-dark);
+            background-color: var(--bg-app);
             color: var(--text-main);
             height: 100vh;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
         }
 
-        /* Container Principal */
-        .app-container {
-            width: 100%;
-            max-width: 900px;
-            height: 95vh;
-            background-color: var(--bg-dark);
+        /* ----- SIDEBAR ESQUERDA ----- */
+        .sidebar-left {
+            width: 280px;
+            background-color: var(--bg-panel);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            border-radius: 16px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            overflow: hidden;
-            border: 1px solid var(--border);
-        }
-
-        /* Cabeçalho */
-        .header {
-            background-color: var(--bg-panel);
-            padding: 1.2rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 1rem;
         }
 
         .brand {
@@ -65,32 +66,82 @@
             align-items: center;
             gap: 12px;
             font-size: 1.2rem;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--primary);
+            margin-bottom: 2rem;
+            padding-left: 0.5rem;
         }
 
-        .brand i { font-size: 1.4rem; }
-
-        .btn-admin {
-            background: transparent;
-            color: var(--text-muted);
+        .btn-new-chat {
+            background-color: transparent;
+            color: var(--text-main);
             border: 1px solid var(--border);
-            padding: 0.5rem 1rem;
+            padding: 0.8rem;
             border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s ease;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             font-weight: 500;
+            transition: background 0.2s;
+            margin-bottom: 2rem;
+        }
+        
+        .btn-new-chat:hover { background-color: var(--bg-hover); }
+
+        .menu-section { margin-bottom: 1.5rem; }
+        
+        .menu-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+            padding-left: 0.5rem;
+            letter-spacing: 0.5px;
         }
 
-        .btn-admin:hover {
-            background-color: var(--border);
+        .menu-item {
+            padding: 0.6rem 0.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             color: var(--text-main);
+            font-size: 0.9rem;
+            transition: background 0.2s;
         }
 
-        /* Área de Chat */
+        .menu-item:hover { background-color: var(--bg-hover); }
+
+        .region-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 0 0.5rem;
+        }
+
+        .chip {
+            background-color: var(--bg-hover);
+            color: var(--text-main);
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 5px;}
+
+        /* ----- ÁREA PRINCIPAL DO CHAT ----- */
+        .main-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-app);
+            position: relative;
+        }
+
         .chat-area {
             flex: 1;
             padding: 2rem;
@@ -100,10 +151,16 @@
             gap: 1.5rem;
         }
 
-        /* Estilo das Mensagens */
-        .message-wrapper {
-            display: flex;
-            width: 100%;
+        .message-wrapper { display: flex; width: 100%; flex-direction: column; }
+        .system { align-items: flex-start; }
+        .user { align-items: flex-end; }
+
+        .message-sender {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            margin-left: 4px;
+            margin-right: 4px;
         }
 
         .message {
@@ -114,19 +171,12 @@
             font-size: 0.95rem;
         }
 
-        .system {
-            justify-content: flex-start;
-        }
-        
         .system .message {
             background-color: var(--bg-panel);
             color: var(--text-main);
             border-bottom-left-radius: 4px;
             border: 1px solid var(--border);
-        }
-
-        .user {
-            justify-content: flex-end;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
         .user .message {
@@ -134,16 +184,9 @@
             color: #fff;
             border-bottom-right-radius: 4px;
             font-weight: 500;
+            box-shadow: 0 4px 6px -1px rgba(0, 165, 233, 0.2);
         }
 
-        .warning-msg {
-            color: var(--warning);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        /* Área de Input */
         .input-area {
             padding: 1.5rem 2rem;
             background-color: var(--bg-panel);
@@ -152,15 +195,10 @@
 
         .input-wrapper {
             display: flex;
-            background-color: var(--bg-dark);
+            background-color: var(--bg-app);
             border: 1px solid var(--border);
             border-radius: 30px;
             padding: 0.4rem;
-            transition: border-color 0.3s;
-        }
-
-        .input-wrapper:focus-within {
-            border-color: var(--primary);
         }
 
         .input-wrapper input {
@@ -171,10 +209,6 @@
             padding: 0 1.5rem;
             font-size: 1rem;
             outline: none;
-        }
-
-        .input-wrapper input::placeholder {
-            color: var(--text-muted);
         }
 
         .btn-buscar {
@@ -188,80 +222,382 @@
             transition: background 0.3s;
         }
 
-        .btn-buscar:hover {
-            background-color: var(--primary-hover);
+        .btn-buscar:hover { background-color: var(--primary-hover); }
+
+        /* ----- SIDEBAR DIREITA ----- */
+        .sidebar-right {
+            width: 300px;
+            background-color: var(--bg-panel);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem 1rem;
         }
 
-        /* Rodapé */
-        .footer {
-            text-align: center;
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 1rem;
+            overflow-y: auto;
+        }
+
+        .history-card {
+            background-color: var(--bg-app);
+            border: 1px solid var(--border);
             padding: 0.8rem;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            background-color: var(--bg-panel);
+            border-radius: 8px;
+            font-size: 0.85rem;
         }
         
-        .footer strong { color: var(--primary); }
+        .history-card .time { color: var(--text-muted); font-size: 0.75rem; margin-top: 5px; }
 
-        /* Scrollbar customizada */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: var(--bg-dark); }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+        /* ----- MODAIS ----- */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            visibility: hidden;
+            opacity: 0;
+            transition: 0.3s;
+        }
+
+        .modal-overlay.active { visibility: visible; opacity: 1; }
+
+        .modal-content {
+            background-color: var(--bg-panel);
+            width: 400px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 2rem;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 15px; right: 15px;
+            background: none; border: none;
+            color: var(--text-muted); cursor: pointer; font-size: 1.2rem;
+        }
+
+        .config-group { margin-bottom: 1.5rem; }
+        .config-group label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-muted); }
+        .config-group input[type="text"], .config-group textarea {
+            width: 100%; padding: 10px; border-radius: 6px;
+            background: var(--bg-app); color: var(--text-main);
+            border: 1px solid var(--border); outline: none; resize: none;
+        }
+
+        .btn-action {
+            width: 100%; padding: 10px; border-radius: 6px; border: none;
+            font-weight: 600; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 10px;
+            background-color: var(--primary); color: white; transition: 0.3s;
+        }
+
+        /* Toggle Switch */
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(26px); }
+
     </style>
 </head>
 <body>
 
-    <div class="app-container">
-        <header class="header">
-            <div class="brand">
-                <i class="fa-solid fa-network-wired"></i>
-                <span>Consultas SPI</span>
-            </div>
-            <button class="btn-admin"><i class="fa-solid fa-gear"></i> Admin</button>
-        </header>
+    <aside class="sidebar-left">
+        <div class="brand">
+            <i class="fa-solid fa-network-wired"></i>
+            <span>Consultas SPI</span>
+        </div>
 
-        <main class="chat-area" id="chatArea">
-            
+        <button class="btn-new-chat" onclick="limparChat()">
+            <i class="fa-solid fa-plus"></i> Novo Chat
+        </button>
+
+        <div class="menu-section">
+            <div class="menu-title">Bases de Dados</div>
+            <div class="menu-item" onclick="toggleSites()">
+                <span><i class="fa-solid fa-database" style="color: var(--text-muted); width: 20px;"></i> Sites Disponíveis</span>
+                <i class="fa-solid fa-chevron-down" id="sitesIcon" style="font-size: 0.8rem;"></i>
+            </div>
+            <div id="sitesList" style="display: none; padding-left: 25px; margin-top: 10px; font-size: 0.85rem; color: var(--text-muted);">
+                <p style="margin-bottom: 4px;">SJC - São José dos Campos</p>
+                <p style="margin-bottom: 4px;">PNI - Pederneiras</p>
+                <p style="margin-bottom: 4px;">AJR - Arealva</p>
+                <p style="margin-bottom: 4px;">SJV - São João da Boa Vista</p>
+                <p style="margin-top:8px; font-size:0.75rem; color:var(--primary); cursor:pointer;">+ Ver todos na planilha</p>
+            </div>
+        </div>
+
+        <div class="menu-section">
+            <div class="menu-title">Regiões Atendidas</div>
+            <div class="region-chips">
+                <span class="chip">12</span>
+                <span class="chip">14</span>
+                <span class="chip">15</span>
+                <span class="chip">16</span>
+                <span class="chip">17</span>
+                <span class="chip">18</span>
+                <span class="chip">19</span>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="menu-item" onclick="abrirAdminComSenha()" style="color: var(--warning);">
+                <span><i class="fa-solid fa-lock" style="width: 20px;"></i> Painel Admin</span>
+            </div>
+            <div class="menu-item" onclick="abrirConfig()">
+                <span><i class="fa-solid fa-gear" style="color: var(--text-muted); width: 20px;"></i> Configurações</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-chat">
+        <div class="chat-area" id="chatArea">
             <div class="message-wrapper system">
+                <span class="message-sender">Sistema SPI</span>
                 <div class="message">
                     Sistema Operacional Ativo. <i class="fa-solid fa-globe" style="color: var(--primary);"></i><br>
                     <span style="color: var(--text-muted);">Informe a Sigla para consultar o plantão.</span>
                 </div>
             </div>
-
-            <div class="message-wrapper user">
-                <div class="message">ajr</div>
-            </div>
-
-            <div class="message-wrapper system">
-                <div class="message">Sigla não encontrada no banco de dados.</div>
-            </div>
-
-            <div class="message-wrapper user">
-                <div class="message">sjr</div>
-            </div>
-
-            <div class="message-wrapper system">
-                <div class="message warning-msg">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    Nenhum técnico exclusivo da base <strong>SJV</strong> de plantão hoje.
-                </div>
-            </div>
-
-        </main>
+        </div>
 
         <footer class="input-area">
             <div class="input-wrapper">
                 <input type="text" id="siglaInput" placeholder="Ex: SJC ou PNI..." autocomplete="off">
-                <button class="btn-buscar" id="btnBuscar">Buscar</button>
+                <button class="btn-buscar" id="btnBuscar" onclick="simularBusca()">Buscar</button>
+            </div>
+            <div style="text-align: center; margin-top: 10px; font-size: 0.75rem; color: var(--text-muted);">
+                © 2026 Consultas SPI | Desenvolvido por <strong style="color: var(--primary);">Victor Henrique de Oliveira</strong>
             </div>
         </footer>
+    </main>
 
-        <div class="footer">
-            © 2026 Consultas SPI | Desenvolvido por <strong>Victor Henrique de Oliveira</strong>
+    <aside class="sidebar-right">
+        <div class="menu-title" style="padding-left:0;">Últimas Consultas Ativas</div>
+        <div class="history-list" id="historicoConsultas">
+            <div class="history-card">
+                <strong>SJC</strong> - Plantonista localizado
+                <div class="time">Hoje, 07:45</div>
+            </div>
+            <div class="history-card">
+                <strong>SJV</strong> - Sem cobertura
+                <div class="time">Hoje, 07:32</div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="modal-overlay" id="configModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="fecharConfig()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--primary);">Configurações</h3>
+            
+            <div class="config-group" style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="margin: 0;">Modo Claro</label>
+                <label class="switch">
+                    <input type="checkbox" id="temaToggle" onchange="trocarTema()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="config-group">
+                <label>Nome para Exibição no Chat</label>
+                <input type="text" id="nomeUsuario" placeholder="Digite seu nome..." value="Victor">
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+
+            <h4 style="margin-bottom: 1rem; font-size: 0.9rem;">Ajuda & Solicitações</h4>
+            <div class="config-group">
+                <textarea id="textoSolicitacao" rows="3" placeholder="Sugira uma melhoria ou reporte um erro..."></textarea>
+            </div>
+            <button class="btn-action" id="btnEnviarSugestao" onclick="enviarSugestaoDireta()">
+                <i class="fa-solid fa-paper-plane"></i> Enviar Solicitação
+            </button>
         </div>
     </div>
 
+    <div class="modal-overlay" id="adminModal">
+        <div class="modal-content" style="width: 500px; max-height: 80vh; overflow-y: auto;">
+            <button class="close-modal" onclick="fecharAdmin()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--warning);"><i class="fa-solid fa-lock"></i> Painel Admin</h3>
+            
+            <h4 style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">Sugestões Recebidas</h4>
+            
+            <div id="listaSugestoes" style="display: flex; flex-direction: column; gap: 10px;">
+                </div>
+            
+            <button class="btn-action" style="background-color: var(--danger); margin-top: 20px;" onclick="limparSugestoes()">
+                <i class="fa-solid fa-trash"></i> Limpar Caixa de Sugestões
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ---- FUNÇÕES DE UI BÁSICAS ----
+        function toggleSites() {
+            const list = document.getElementById('sitesList');
+            const icon = document.getElementById('sitesIcon');
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                icon.className = 'fa-solid fa-chevron-up';
+            } else {
+                list.style.display = 'none';
+                icon.className = 'fa-solid fa-chevron-down';
+            }
+        }
+
+        function abrirConfig() { document.getElementById('configModal').classList.add('active'); }
+        function fecharConfig() { document.getElementById('configModal').classList.remove('active'); }
+
+        function trocarTema() {
+            const toggle = document.getElementById('temaToggle').checked;
+            if (toggle) document.body.classList.add('light-mode');
+            else document.body.classList.remove('light-mode');
+        }
+
+        function limparChat() {
+            document.getElementById('chatArea').innerHTML = `
+                <div class="message-wrapper system">
+                    <span class="message-sender">Sistema SPI</span>
+                    <div class="message">
+                        Chat reiniciado. Sistema Operacional Ativo. <i class="fa-solid fa-globe" style="color: var(--primary);"></i>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Função temporária apenas para testar o envio no chat
+        function simularBusca() {
+            const input = document.getElementById('siglaInput');
+            const valor = input.value.trim().toUpperCase();
+            const nomeDigitado = document.getElementById('nomeUsuario').value || 'Usuário';
+            
+            if(!valor) return;
+
+            const chatArea = document.getElementById('chatArea');
+            
+            // Mensagem do usuário
+            chatArea.innerHTML += `
+                <div class="message-wrapper user">
+                    <span class="message-sender">${nomeDigitado}</span>
+                    <div class="message">${valor}</div>
+                </div>`;
+            
+            input.value = '';
+            chatArea.scrollTop = chatArea.scrollHeight;
+
+            // Simula resposta do sistema (Aqui é onde seu antigo database vai se conectar)
+            setTimeout(() => {
+                chatArea.innerHTML += `
+                <div class="message-wrapper system">
+                    <span class="message-sender">Sistema SPI</span>
+                    <div class="message">Buscando informações para <strong>${valor}</strong>...</div>
+                </div>`;
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }, 500);
+        }
+
+        // ---- FUNÇÕES DE SUGESTÃO E ADMIN ----
+        function enviarSugestaoDireta() {
+            const texto = document.getElementById('textoSolicitacao').value;
+            const btn = document.getElementById('btnEnviarSugestao');
+            const nome = document.getElementById('nomeUsuario').value || 'Usuário Anônimo';
+
+            if(!texto) {
+                alert("Por favor, digite uma solicitação primeiro!");
+                return;
+            }
+
+            // Estado de "Carregando"
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+            btn.disabled = true;
+            btn.style.opacity = '0.8';
+
+            // Simula processamento
+            setTimeout(() => {
+                let sugestoes = JSON.parse(localStorage.getItem('sugestoesSPI')) || [];
+                
+                sugestoes.push({
+                    texto: texto,
+                    data: new Date().toLocaleString('pt-BR'),
+                    usuario: nome
+                });
+
+                localStorage.setItem('sugestoesSPI', JSON.stringify(sugestoes));
+
+                document.getElementById('textoSolicitacao').value = ""; 
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Sugestão enviada para verificação';
+                btn.style.backgroundColor = "var(--success)";
+                btn.style.opacity = '1';
+                
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar Solicitação';
+                    btn.style.backgroundColor = "var(--primary)";
+                    btn.disabled = false;
+                }, 3500);
+                
+            }, 1000);
+        }
+
+        function abrirAdminComSenha() {
+            const senha = prompt("Digite a senha do administrador:");
+            if(senha === "admin") {
+                document.getElementById('adminModal').classList.add('active');
+                carregarSugestoes();
+            } else if (senha !== null) {
+                alert("Senha incorreta!");
+            }
+        }
+
+        function fecharAdmin() {
+            document.getElementById('adminModal').classList.remove('active');
+        }
+
+        function carregarSugestoes() {
+            const lista = document.getElementById('listaSugestoes');
+            let sugestoes = JSON.parse(localStorage.getItem('sugestoesSPI')) || [];
+
+            lista.innerHTML = ""; 
+
+            if (sugestoes.length === 0) {
+                lista.innerHTML = "<p style='color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 20px;'>Nenhuma sugestão recebida ainda.</p>";
+                return;
+            }
+
+            sugestoes.slice().reverse().forEach((sugestao) => {
+                lista.innerHTML += `
+                    <div style="background-color: var(--bg-app); border: 1px solid var(--border); padding: 12px; border-radius: 8px;">
+                        <div style="font-size: 0.75rem; color: var(--primary); margin-bottom: 6px; display: flex; justify-content: space-between;">
+                            <strong><i class="fa-solid fa-user"></i> ${sugestao.usuario}</strong>
+                            <span style="color: var(--text-muted);">${sugestao.data}</span>
+                        </div>
+                        <div style="font-size: 0.9rem; line-height: 1.4; color: var(--text-main);">${sugestao.texto}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function limparSugestoes() {
+            if(confirm("Tem certeza que deseja apagar permanentemente todas as sugestões?")) {
+                localStorage.removeItem('sugestoesSPI');
+                carregarSugestoes();
+            }
+        }
+
+        // Permite enviar a busca apertando a tecla Enter
+        document.getElementById('siglaInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                simularBusca();
+            }
+        });
+    </script>
 </body>
 </html>
