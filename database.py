@@ -30,31 +30,57 @@ def get_connection():
 
 def init_db():
     conn = get_connection()
+    conn.autocommit = True
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS sites (sigla TEXT PRIMARY KEY, nome_da_localidade TEXT, ddd TEXT, cm_responsavel TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS escala (id SERIAL PRIMARY KEY, ddd_aba TEXT, tecnico TEXT, contato_corp TEXT, supervisor TEXT, cm TEXT, segmento TEXT, dia_mes TEXT, mes_ano TEXT, horario TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS sugestoes (id SERIAL PRIMARY KEY, usuario TEXT, texto TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS historico (id SERIAL PRIMARY KEY, sigla TEXT, status TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS historico (id SERIAL PRIMARY KEY, usuario TEXT, sigla TEXT, status TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios_online (nome TEXT PRIMARY KEY, ultima_atividade TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # Atualiza a tabela histórico antiga se não tiver a coluna usuario
+    try:
+        cursor.execute("ALTER TABLE historico ADD COLUMN IF NOT EXISTS usuario TEXT DEFAULT 'Anônimo'")
+    except: pass
+    
+    conn.close()
+
+# --- USUÁRIOS ONLINE ---
+def ping_user(nome):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO usuarios_online (nome, ultima_atividade) VALUES (%s, CURRENT_TIMESTAMP)
+        ON CONFLICT (nome) DO UPDATE SET ultima_atividade = CURRENT_TIMESTAMP
+    """, (nome,))
     conn.commit()
     conn.close()
 
-# --- FUNÇÕES DE HISTÓRICO ---
-def save_historico(sigla, status):
+def get_online_users():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO historico (sigla, status) VALUES (%s, %s)", (sigla, status))
+    # Pega quem pingou nos últimos 2 minutos
+    cursor.execute("SELECT nome FROM usuarios_online WHERE ultima_atividade >= NOW() - INTERVAL '2 minutes'")
+    rows = cursor.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+# --- HISTÓRICO E SUGESTÕES ---
+def save_historico(usuario, sigla, status):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO historico (usuario, sigla, status) VALUES (%s, %s, %s)", (usuario, sigla, status))
     conn.commit()
     conn.close()
 
 def get_historico():
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT sigla, status, data FROM historico ORDER BY data DESC LIMIT 15")
+    cursor.execute("SELECT usuario, sigla, status, data FROM historico ORDER BY data DESC LIMIT 15")
     rows = cursor.fetchall()
     conn.close()
-    return [{"sigla": r['sigla'], "status": r['status'], "tempo": r['data'].strftime('%H:%M')} for r in rows]
+    return [{"usuario": r['usuario'], "sigla": r['sigla'], "status": r['status'], "tempo": r['data'].strftime('%H:%M')} for r in rows]
 
-# --- FUNÇÕES DE SUGESTÃO ---
 def save_suggestion(usuario, texto):
     conn = get_connection()
     cursor = conn.cursor()
@@ -70,16 +96,17 @@ def get_suggestions():
     conn.close()
     return [{"usuario": r['usuario'], "texto": r['texto'], "data": r['data'].strftime('%d/%m/%Y %H:%M')} for r in rows]
 
-# --- PROCESSAMENTO EXCEL ---
+# --- PROCESSAMENTO EXCEL (CORRIGIDO PARA ACHAR CIDADE) ---
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
-    # Limpa nomes de colunas e remove acentos para não dar erro
-    df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O').replace('Ç', 'C') for c in df.columns]
+    # Limpeza bruta do cabeçalho
+    df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.columns]
     
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
     
-    # NOVA INTELIGÊNCIA: Procura primeiro por MUNICÍPIO ou CIDADE antes de pegar NOME/LOCAL
-    col_nome = next((c for c in df.columns if 'MUNIC' in c), None)
+    # 🚨 INTELIGÊNCIA MÁXIMA: Procura exatamente a coluna NOMEDALOCALIDADE primeiro
+    col_nome = next((c for c in df.columns if c == 'NOMEDALOCALIDADE'), None)
+    if not col_nome: col_nome = next((c for c in df.columns if 'MUNIC' in c), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'CIDAD' in c), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'LOCALIDAD' in c), None)
     if not col_nome: col_nome = next((c for c in df.columns if 'NOME' in c), None)
@@ -132,12 +159,10 @@ def process_excel_escala(file_path):
                     header_row = row.values
                     df_dados = df.iloc[i + 1:]
                     break
-                    
         if len(header_row) == 0: continue
         
         tec_idx, contato_idx, sup_idx, cm_idx, seg_idx = -1, -1, -1, -1, -1
         dias_idx_map = {}
-        
         for i, val in enumerate(header_row):
             v_str = str(val).strip().upper()
             if 'FUNCION' in v_str: tec_idx = i
@@ -153,22 +178,18 @@ def process_excel_escala(file_path):
                     except: pass
                 else:
                     poss_dia = v_str.split('/')[0].split('.')[0].strip()
-                    if poss_dia.isdigit() and 1 <= int(poss_dia) <= 31:
-                        dia_limpo = str(int(poss_dia))
+                    if poss_dia.isdigit() and 1 <= int(poss_dia) <= 31: dia_limpo = str(int(poss_dia))
                 if dia_limpo: dias_idx_map[i] = dia_limpo
 
         for _, row in df_dados.iterrows():
             row_vals = row.values
             if tec_idx == -1 or len(row_vals) <= tec_idx: continue
-            
             tec = str(row_vals[tec_idx]).strip()
             if not tec or tec.upper() in ['NAN', 'NONE', '', 'FUNCIONÁRIOS', 'FUNCIONARIOS']: continue
-            
             contato = str(row_vals[contato_idx]).replace('.0', '').replace('nan', '').strip() if contato_idx != -1 and len(row_vals) > contato_idx else ''
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
             segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não especificado'
-            
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
                     plantao_val = str(row_vals[d_idx]).strip().upper()
@@ -178,13 +199,12 @@ def process_excel_escala(file_path):
                             chaves_vistas.add(chave_unica)
                             all_rows.append((str(aba).upper(), tec, contato, supervisor, cm, segmento, d_limpo, mes_ano, plantao_val))
 
-    if all_rows:
-        execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, segmento, dia_mes, mes_ano, horario) VALUES %s", all_rows)
+    if all_rows: execute_values(cursor, "INSERT INTO escala (ddd_aba, tecnico, contato_corp, supervisor, cm, segmento, dia_mes, mes_ano, horario) VALUES %s", all_rows)
     conn.commit()
     conn.close()
 
 # --- BUSCA INTELIGENTE ---
-def query_data(user_text, data_consulta=None):
+def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
@@ -215,21 +235,19 @@ def query_data(user_text, data_consulta=None):
         }
         
         if plantoes:
-            save_historico(match, "Plantonista localizado")
+            save_historico(nome_usuario, match, "Localizado")
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_info = f"<div style='margin-bottom: 10px;'><b style='color:white;'>👨‍🔧 {p['tecnico']}</b><br>⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
-                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed #334155; margin:8px 0;'>"
-                
+                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
         else:
-             save_historico(match, "Sem cobertura")
+             save_historico(nome_usuario, match, "Sem cobertura")
              resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje."
-             
         return resposta
     
     conn.close()
-    save_historico(user_text.upper()[:10], "Não encontrada")
-    return {"encontrado": False, "erro": "Sigla não encontrada no banco de dados."}
+    save_historico(nome_usuario, user_text.upper()[:10], "Inválido")
+    return {"encontrado": False, "erro": "Sigla não encontrada."}
