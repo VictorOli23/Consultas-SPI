@@ -73,7 +73,6 @@ def process_excel_sites(file_path):
     conn = get_connection()
     cursor = conn.cursor()
     
-    # MÁGICA: Usando um Dicionário. Se houver duas siglas iguais no Excel, a segunda substitui a primeira aqui dentro do Python
     dados_dict = {}
     
     for _, row in df.iterrows():
@@ -94,10 +93,8 @@ def process_excel_sites(file_path):
             if not cm_resp and col_tx:
                 cm_resp = str(row.get(col_tx, '')).replace('nan', '').strip().upper()
                 
-            # Salva no dicionário. A sigla é a "Chave".
             dados_dict[sigla] = (sigla, nome, ddd, cm_resp)
 
-    # Transforma o dicionário (já sem duplicatas) numa lista para mandar para o banco
     dados_insercao = list(dados_dict.values())
 
     if dados_insercao:
@@ -197,6 +194,8 @@ def query_data(user_text):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now()
+    
+    # Pega apenas o dia atual
     dia_atual = str(hoje.day)
     
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
@@ -210,10 +209,11 @@ def query_data(user_text):
         cm_banco = site.get('cm_responsavel', '').strip()
         cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match[:3]
         
+        # MÁGICA: Removido a trava de 'mes_ano' daqui. Agora ele só procura o dia!
         cursor.execute("""
             SELECT * FROM escala 
-            WHERE ddd_aba LIKE %s AND cm ILIKE %s AND dia_mes = %s AND mes_ano = %s
-        """, (f"%{site['ddd']}%", f"%{cm_busca}%", dia_atual, hoje.strftime('%m-%Y')))
+            WHERE ddd_aba LIKE %s AND cm ILIKE %s AND dia_mes = %s
+        """, (f"%{site['ddd']}%", f"%{cm_busca}%", dia_atual))
         
         plantoes = cursor.fetchall()
         conn.close()
