@@ -171,7 +171,6 @@ def process_excel_escala(file_path):
             if 'FUNCION' in v_str: tec_idx = i
             elif 'CONTATO' in v_str: contato_idx = i
             elif 'SUPERV' in v_str: sup_idx = i
-            # Nova trava de segurança para achar a coluna CM mesmo se estiver nomeada como AREA, BASE ou com espaços
             elif v_str in ['CM', 'BASE', 'AREA', 'ÁREA'] or v_str == 'CM_RESPONSAVEL': cm_idx = i
             elif 'SEGMENTO' in v_str: seg_idx = i
             else:
@@ -209,7 +208,7 @@ def process_excel_escala(file_path):
     conn.close()
 
 
-# --- NOVO MOTOR DE BUSCA DUPLA (ACEITA SIGLA E NOME DA BASE) ---
+# --- MOTOR DE BUSCA TRIPLA (ABA, BASE OU SIGLA) ---
 def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -220,30 +219,33 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     
     termo = user_text.strip().upper()
 
-    # 1. TENTA ACHAR COMO NOME DE BASE DIRETO (Ex: Usuário digitou METROPOLITANA)
-    cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
-    bases_db = [r['cm'] for r in cursor.fetchall()]
+    # CAMADA 1: TENTA ACHAR PELO NOME DA ABA/PLANILHA (Ex: "CAS", "19CAS")
+    cursor.execute("SELECT DISTINCT ddd_aba FROM escala WHERE ddd_aba ILIKE %s", (f"%{termo}%",))
+    abas_encontradas = [r['ddd_aba'] for r in cursor.fetchall()]
     
-    match_base = process.extractOne(termo, bases_db)
-    if match_base and match_base[1] >= 85: # Se tiver 85% de certeza que ele digitou a região
-        cm_busca = match_base[0]
-        cursor.execute("SELECT * FROM escala WHERE cm = %s AND dia_mes = %s", (cm_busca, dia_alvo))
+    # Executa se a palavra "CAS" estiver na pesquisa, e encontrou alguma aba
+    if abas_encontradas and "CAS" in termo:
+        cursor.execute("SELECT * FROM escala WHERE ddd_aba IN %s AND dia_mes = %s", (tuple(abas_encontradas), dia_alvo))
         plantoes = cursor.fetchall()
         
         if plantoes:
             resposta = {
                 "encontrado": True,
-                "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região",
+                "cabecalho": f"📍 <b>Planilha(s): {', '.join(abas_encontradas)}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas desta aba",
                 "infra": [], "tx": []
             }
-            save_historico(nome_usuario, cm_busca, "Localizado (Região)")
+            save_historico(nome_usuario, termo, "Localizado (Planilha)")
+            
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
                 
+                # ADICIONA O NOME DA BASE DO LADO DO TÉCNICO PARA FACILITAR A VISUALIZAÇÃO
+                nome_base_visual = f" <span style='font-size:0.75rem; color:var(--warning);'>({p['cm']})</span>" if p['cm'] else ""
+                
                 tec_info = f"<div style='margin-bottom: 10px;'>"
-                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara com este Técnico'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
+                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']}{nome_base_visual} <i class='fa-solid fa-share-from-square' style='font-size:0.85em;'></i></span><br>"
                 tec_info += f"⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
@@ -253,7 +255,40 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return resposta
 
-    # 2. SE NÃO FOR BASE, TENTA ACHAR COMO SIGLA (Ex: Usuário digitou SJV)
+    # CAMADA 2: TENTA ACHAR COMO NOME DE BASE (Ex: "METROPOLITANA")
+    cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
+    bases_db = [r['cm'] for r in cursor.fetchall()]
+    
+    match_base = process.extractOne(termo, bases_db)
+    if match_base and match_base[1] >= 85: 
+        cm_busca = match_base[0]
+        cursor.execute("SELECT * FROM escala WHERE cm = %s AND dia_mes = %s", (cm_busca, dia_alvo))
+        plantoes = cursor.fetchall()
+        
+        if plantoes:
+            resposta = {
+                "encontrado": True,
+                "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região",
+                "infra": [], "tx": []
+            }
+            save_historico(nome_usuario, cm_busca, "Localizado (Região)")
+            for p in plantoes:
+                h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
+                tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
+                contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
+                
+                tec_info = f"<div style='margin-bottom: 10px;'>"
+                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
+                tec_info += f"⏰ {h_fmt}<br>"
+                if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
+                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
+                
+                if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
+                else: resposta["tx"].append(tec_info)
+            conn.close()
+            return resposta
+
+    # CAMADA 3: TENTA ACHAR COMO SIGLA (Ex: SJV)
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
@@ -270,7 +305,7 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
 
         resposta = {
             "encontrado": True,
-            "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}",
+            "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}",
             "infra": [], "tx": []
         }
         
@@ -282,7 +317,7 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
                 contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
                 
                 tec_info = f"<div style='margin-bottom: 10px;'>"
-                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara com este Técnico'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
+                tec_info += f"<span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']} <i class='fa-solid fa-share-from-square' style='font-size:0.85em; margin-left:3px;'></i></span><br>"
                 tec_info += f"⏰ {h_fmt}<br>"
                 if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
                 tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
@@ -296,4 +331,4 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     
     conn.close()
     save_historico(nome_usuario, termo[:10], "Inválido")
-    return {"encontrado": False, "erro": "Sigla ou Base não encontrada no banco de dados."}
+    return {"encontrado": False, "erro": "Sigla, Base ou Planilha não encontrada."}
