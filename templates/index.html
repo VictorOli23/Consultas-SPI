@@ -349,7 +349,7 @@
         </div>
 
         <div class="sidebar-footer">
-            <div class="menu-item" onclick="abrirAdminComSenha()" style="color: var(--warning);">
+            <div class="menu-item" onclick="abrirAdmin()" style="color: var(--warning);">
                 <span><i class="fa-solid fa-lock" style="width: 20px;"></i> Painel Admin</span>
             </div>
             <div class="menu-item" onclick="abrirConfig()">
@@ -547,14 +547,9 @@
             }, 1000);
         }
 
-        function abrirAdminComSenha() {
-            const senha = prompt("Digite a senha do administrador:");
-            if(senha === "admin") {
-                document.getElementById('adminModal').classList.add('active');
-                carregarSugestoes();
-            } else if (senha !== null) {
-                alert("Senha incorreta!");
-            }
+        function abrirAdmin() {
+            document.getElementById('adminModal').classList.add('active');
+            carregarSugestoes();
         }
 
         function fecharAdmin() {
