@@ -46,8 +46,9 @@
         
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; visibility: hidden; opacity: 0; transition: 0.3s; }
         .modal-overlay.active { visibility: visible; opacity: 1; }
-        .modal-content { background-color: var(--bg-panel); width: 400px; border-radius: 12px; border: 1px solid var(--border); padding: 2rem; position: relative; }
+        .modal-content { background-color: var(--bg-panel); width: 400px; border-radius: 12px; border: 1px solid var(--border); padding: 2rem; position: relative; max-height: 90vh; overflow-y: auto; }
         .close-modal { position: absolute; top: 15px; right: 15px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.2rem; }
+        
         .config-group { margin-bottom: 1.5rem; }
         .config-group label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-muted); }
         .config-group input[type="text"], .config-group input[type="password"], .config-group textarea, select { width: 100%; padding: 10px; border-radius: 6px; background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border); outline: none; resize: none; }
@@ -60,7 +61,6 @@
         input:checked + .slider { background-color: var(--primary); }
         input:checked + .slider:before { transform: translateX(26px); }
 
-        /* MÁSCARAS ESTILOS */
         .mask-card { background: var(--bg-app); border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 15px; }
         .mask-card textarea { width: 100%; font-family: 'Inter', sans-serif; font-size: 0.85rem; line-height: 1.4; border: none; background: transparent; color: var(--text-main); resize: vertical; outline: none; margin-bottom: 10px; }
         .btn-copy { background-color: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; margin-left: auto; transition: 0.2s; }
@@ -73,10 +73,10 @@
         <div class="brand"><i class="fa-solid fa-network-wired"></i><span>Consultas SPI</span></div>
         <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 15px; padding-left:5px;">Olá, <b id="displayMeuNome" style="color:var(--primary);"></b></div>
         
-        <button class="btn-new-chat" onclick="limparChat()"><i class="fa-solid fa-plus"></i> Novo Chat</button>
+        <button class="btn-new-chat" onclick="limparChat()"><i class="fa-solid fa-plus"></i> Nova Busca</button>
         
         <div class="menu-item" onclick="abrirMascaras()" style="border: 1px solid var(--border); margin-bottom: 15px;">
-            <span><i class="fa-solid fa-file-signature" style="color: var(--primary); width: 20px;"></i> Máscaras</span>
+            <span><i class="fa-solid fa-file-signature" style="color: var(--primary); width: 20px;"></i> Máscaras Manuais</span>
         </div>
 
         <div style="margin-top: auto; display: flex; flex-direction: column; gap: 5px;">
@@ -117,17 +117,18 @@
     <div class="modal-overlay" id="mascarasModal">
         <div class="modal-content" style="width: 550px; max-height: 90vh; overflow-y: auto;">
             <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
-            <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><i class="fa-solid fa-file-signature"></i> Máscaras Padrões</h3>
+            <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><i class="fa-solid fa-file-signature"></i> Máscaras de Acionamento</h3>
             
             <div class="config-group">
-                <label>Vincular Técnico da Escala</label>
-                <select id="selectTecnico" onchange="atualizarMascaras()">
-                    <option value="">Selecione um técnico...</option>
+                <label>Vincular Técnico (Opcional se abriu pelo menu)</label>
+                <select id="selectTecnico" onchange="atualizarMascarasPeloSelect()">
+                    <option value="">Selecione um técnico da lista...</option>
                 </select>
             </div>
 
             <div class="mask-card">
-                <textarea id="txtAcionamento" style="height: 110px;">###ACIONAMENTO ###    
+                <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: bold; margin-bottom: 5px;">Acionamento Padrão</div>
+                <textarea id="txtAcionamento" style="height: 100px;">###ACIONAMENTO ###    
 Nome/Contato do Técnico:    
 Previsão de atendimento:    
 Status:    
@@ -136,6 +137,7 @@ Observação:    </textarea>
             </div>
 
             <div class="mask-card">
+                <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: bold; margin-bottom: 5px;">Atualização de Status</div>
                 <textarea id="txtAtualizacao" style="height: 120px;">##### ATUALIZAÇÃO #####    
 Nome/Contato do Técnico:    
 Técnico no local?    
@@ -172,8 +174,8 @@ Observação:    </textarea>
         <div class="modal-content" style="width: 350px;">
             <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
             <h3 style="margin-bottom: 1.5rem; color: var(--primary); text-align: center;"><i class="fa-solid fa-right-to-bracket"></i> Login Restrito</h3>
-            <div class="config-group"><label>Usuário</label><input type="text" id="usuarioAdmin" placeholder="Digite seu ID..."></div>
-            <div class="config-group"><label>Senha</label><input type="password" id="senhaAdmin" placeholder="Digite a senha..."></div>
+            <div class="config-group"><label>Usuário</label><input type="text" id="usuarioAdmin" placeholder="Digite seu ID..." autocomplete="off"></div>
+            <div class="config-group"><label>Senha</label><input type="password" id="senhaAdmin" placeholder="Digite a senha..." autocomplete="off"></div>
             <button class="btn-action" id="btnLoginAdmin" onclick="fazerLoginAdmin()">Entrar no Painel</button>
         </div>
     </div>
@@ -226,13 +228,9 @@ Observação:    </textarea>
         function iniciarSistema() {
             document.getElementById('displayMeuNome').innerText = meuNome;
             document.getElementById('nomeUsuario').value = meuNome;
-            
             const darPing = () => fetch('/ping', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome: meuNome})});
-            darPing(); 
-            pingInterval = setInterval(darPing, 30000);
-            
-            atualizarHistorico();
-            setInterval(atualizarHistorico, 5000);
+            darPing(); pingInterval = setInterval(darPing, 30000);
+            atualizarHistorico(); setInterval(atualizarHistorico, 5000);
         }
 
         function fecharModais() {
@@ -246,34 +244,48 @@ Observação:    </textarea>
         function trocarTema() { if (document.getElementById('temaToggle').checked) document.body.classList.add('light-mode'); else document.body.classList.remove('light-mode'); }
         function limparChat() { document.getElementById('chatArea').innerHTML = `<div class="message-wrapper system"><div class="message">Chat reiniciado.</div></div>`; }
 
-        // --- SISTEMA DE MÁSCARAS ---
-        async function abrirMascaras() {
-            fecharModais();
-            document.getElementById('mascarasModal').classList.add('active');
+        // --- MÁSCARAS INTELIGENTES ---
+        async function carregarSelectTecnicos() {
             const select = document.getElementById('selectTecnico');
-            
             if(select.options.length <= 1) {
                 select.innerHTML = '<option value="">Carregando técnicos...</option>';
                 try {
                     const res = await fetch('/tecnicos');
                     const tecnicos = await res.json();
                     select.innerHTML = '<option value="">Selecione o Técnico (Lista da Escala)...</option>';
-                    tecnicos.forEach(t => {
-                        select.innerHTML += `<option value="${t.nome} - ${t.contato}">${t.nome} (${t.contato})</option>`;
-                    });
+                    tecnicos.forEach(t => { select.innerHTML += `<option value="${t.nome} - ${t.contato}">${t.nome} (${t.contato})</option>`; });
                 } catch(e) { select.innerHTML = '<option value="">Erro ao carregar</option>'; }
             }
         }
 
-        function atualizarMascaras() {
-            const tech = document.getElementById('selectTecnico').value;
-            const insertValue = tech ? `Nome/Contato do Técnico: ${tech}` : `Nome/Contato do Técnico:    `;
+        // Abre pelo menu lateral
+        function abrirMascaras() {
+            fecharModais();
+            document.getElementById('mascarasModal').classList.add('active');
+            carregarSelectTecnicos();
+        }
+
+        // Abre clicando direto no nome do técnico no chat (A MÁGICA)
+        function abrirMascarasComTecnico(nomeTecnico, contatoTecnico) {
+            fecharModais();
+            document.getElementById('mascarasModal').classList.add('active');
+            carregarSelectTecnicos(); // Carrega o select no fundo por garantia
+
+            const insertValue = `Nome/Contato do Técnico: ${nomeTecnico} - ${contatoTecnico}`;
             
             const txt1 = document.getElementById('txtAcionamento');
             txt1.value = txt1.value.replace(/Nome\/Contato do Técnico:.*/, insertValue);
             
             const txt2 = document.getElementById('txtAtualizacao');
             txt2.value = txt2.value.replace(/Nome\/Contato do Técnico:.*/, insertValue);
+        }
+
+        // Se usar o select do modal
+        function atualizarMascarasPeloSelect() {
+            const tech = document.getElementById('selectTecnico').value;
+            const insertValue = tech ? `Nome/Contato do Técnico: ${tech}` : `Nome/Contato do Técnico:    `;
+            const txt1 = document.getElementById('txtAcionamento'); txt1.value = txt1.value.replace(/Nome\/Contato do Técnico:.*/, insertValue);
+            const txt2 = document.getElementById('txtAtualizacao'); txt2.value = txt2.value.replace(/Nome\/Contato do Técnico:.*/, insertValue);
         }
 
         function copiarMask(id, btn) {
@@ -287,7 +299,7 @@ Observação:    </textarea>
             });
         }
 
-        // --- HISTÓRICO LATERAL ---
+        // --- RESTANTE (CHAT, ADMIN, ETC) ---
         async function atualizarHistorico() {
             try {
                 const resp = await fetch('/historico'); const lista = await resp.json();
@@ -300,7 +312,6 @@ Observação:    </textarea>
             } catch(e) {}
         }
 
-        // --- CHAT ---
         async function realizarBusca() {
             const input = document.getElementById('siglaInput');
             const siglaDigitada = input.value.trim().toUpperCase();
@@ -324,7 +335,6 @@ Observação:    </textarea>
 
                 const dados = await resposta.json();
                 document.getElementById(idCarregando).remove();
-                
                 let textoHTML = `<div>${dados.response.cabecalho || dados.response.erro}</div>`;
 
                 if (dados.response.encontrado && !dados.response.erro) {
@@ -352,20 +362,15 @@ Observação:    </textarea>
         }
         document.getElementById('siglaInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') realizarBusca(); });
 
-        // --- ADMIN ---
         async function fazerLoginAdmin() {
-            const u = document.getElementById('usuarioAdmin').value;
-            const p = document.getElementById('senhaAdmin').value;
+            const u = document.getElementById('usuarioAdmin').value; const p = document.getElementById('senhaAdmin').value;
             const btn = document.getElementById('btnLoginAdmin');
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>...'; btn.disabled = true;
-
             try {
                 const resp = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: u, senha: p }) });
-                if (resp.ok) {
-                    fecharModais(); document.getElementById('adminModal').classList.add('active'); 
-                    carregarSugestoesDoBanco(); carregarUsuariosOnline(); 
-                } else { alert("Incorreto!"); }
-            } catch (e) { alert("Erro de rede."); } finally { btn.innerHTML = 'Entrar no Painel'; btn.disabled = false; }
+                if (resp.ok) { fecharModais(); document.getElementById('adminModal').classList.add('active'); carregarSugestoesDoBanco(); carregarUsuariosOnline(); } 
+                else { alert("Incorreto!"); }
+            } catch (e) {} finally { btn.innerHTML = 'Entrar no Painel'; btn.disabled = false; }
         }
 
         async function carregarUsuariosOnline() {
@@ -378,21 +383,16 @@ Observação:    </textarea>
         }
 
         async function enviarPlanilha(tipo) {
-            const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala';
-            const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala';
-            const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala';
-            const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala';
+            const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala'; const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala';
+            const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala'; const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala';
             const fileInput = document.getElementById(inputId); const btn = document.getElementById(btnId);
             if (fileInput.files.length === 0) return alert("Selecione um arquivo!");
             const formData = new FormData(); formData.append('planilha', fileInput.files[0]);
-
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...'; btn.disabled = true; btn.style.opacity = '0.7';
             try {
                 const resp = await fetch(rota, { method: 'POST', body: formData });
-                if (resp.ok) {
-                    btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = "";
-                    setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000);
-                } else throw new Error();
+                if (resp.ok) { btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = ""; setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000); } 
+                else throw new Error();
             } catch (e) { alert("Erro."); btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; }
         }
 
