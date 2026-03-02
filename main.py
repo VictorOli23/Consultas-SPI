@@ -1,10 +1,9 @@
 import os
 from flask import Flask, render_template, request, jsonify, session
 from werkzeug.utils import secure_filename
-from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions
+from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico
 
 app = Flask(__name__)
-# Chave secreta para a sessão de admin
 app.secret_key = os.environ.get("SECRET_KEY", "chave_secreta_spi_2026")
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -20,7 +19,7 @@ def index():
 def chat():
     dados = request.json
     user_input = dados.get("message")
-    data_consulta = dados.get("data") # O front-end manda a data (ex: "2/3")
+    data_consulta = dados.get("data")
     
     if not user_input:
         return jsonify({"error": "Mensagem vazia"}), 400
@@ -28,13 +27,17 @@ def chat():
     resultado = query_data(user_input, data_consulta)
     return jsonify({"response": resultado})
 
+# Rota para puxar as últimas consultas em tempo real
+@app.route("/historico", methods=["GET"])
+def historico():
+    return jsonify(get_historico())
+
 @app.route("/login", methods=["POST"])
 def login():
     dados = request.json
     username = dados.get("usuario")
     password = dados.get("senha")
     
-    # Valida contra a senha configurada no painel do Render
     SENHA_SECRETA = os.environ.get("ADMIN_PASSWORD")
     
     if username == "81032045" and password == SENHA_SECRETA: 
