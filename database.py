@@ -73,9 +73,17 @@ def get_suggestions():
 # --- PROCESSAMENTO EXCEL ---
 def process_excel_sites(file_path):
     df = pd.read_excel(file_path).fillna('')
-    df.columns = [str(c).strip().upper().replace(' ', '') for c in df.columns]
+    # Limpa nomes de colunas e remove acentos para não dar erro
+    df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O').replace('Ç', 'C') for c in df.columns]
+    
     col_sigla = next((c for c in df.columns if 'SIGLA' in c), None)
-    col_nome = next((c for c in df.columns if 'NOME' in c or 'LOCAL' in c), None)
+    
+    # NOVA INTELIGÊNCIA: Procura primeiro por MUNICÍPIO ou CIDADE antes de pegar NOME/LOCAL
+    col_nome = next((c for c in df.columns if 'MUNIC' in c), None)
+    if not col_nome: col_nome = next((c for c in df.columns if 'CIDAD' in c), None)
+    if not col_nome: col_nome = next((c for c in df.columns if 'LOCALIDAD' in c), None)
+    if not col_nome: col_nome = next((c for c in df.columns if 'NOME' in c), None)
+    
     col_ddd = next((c for c in df.columns if 'DDD' in c), None)
     col_cm = next((c for c in df.columns if 'CX' in c or 'TX' in c or 'CM' in c), None)
 
