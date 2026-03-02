@@ -1,14 +1,13 @@
 import os
 from flask import Flask, render_template, request, jsonify, session
 from werkzeug.utils import secure_filename
-from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico
+from database import init_db, process_excel_sites, process_excel_escala, query_data, save_suggestion, get_suggestions, get_historico, ping_user, get_online_users
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chave_secreta_spi_2026")
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Inicializa o banco de dados (Cria tabelas no Neon.tech se não existirem)
 init_db()
 
 @app.route("/")
@@ -20,14 +19,27 @@ def chat():
     dados = request.json
     user_input = dados.get("message")
     data_consulta = dados.get("data")
+    nome_usuario = dados.get("nome", "Anônimo") # Recebe quem pesquisou
     
     if not user_input:
         return jsonify({"error": "Mensagem vazia"}), 400
 
-    resultado = query_data(user_input, data_consulta)
+    resultado = query_data(user_input, data_consulta, nome_usuario)
     return jsonify({"response": resultado})
 
-# Rota para puxar as últimas consultas em tempo real
+# --- NOVAS ROTAS DE PRESENÇA (ONLINE) ---
+@app.route("/ping", methods=["POST"])
+def ping():
+    nome = request.json.get("nome")
+    if nome:
+        ping_user(nome)
+    return jsonify({"status": "ok"})
+
+@app.route("/admin/online", methods=["GET"])
+def online():
+    if not session.get('logged_in'): return jsonify([]), 401
+    return jsonify(get_online_users())
+
 @app.route("/historico", methods=["GET"])
 def historico():
     return jsonify(get_historico())
@@ -35,12 +47,7 @@ def historico():
 @app.route("/login", methods=["POST"])
 def login():
     dados = request.json
-    username = dados.get("usuario")
-    password = dados.get("senha")
-    
-    SENHA_SECRETA = os.environ.get("ADMIN_PASSWORD")
-    
-    if username == "81032045" and password == SENHA_SECRETA: 
+    if dados.get("usuario") == "81032045" and dados.get("senha") == os.environ.get("ADMIN_PASSWORD"): 
         session['logged_in'] = True
         return jsonify({"sucesso": True}), 200
     return jsonify({"erro": "Credenciais inválidas"}), 401
@@ -53,8 +60,7 @@ def post_sugestao():
 
 @app.route("/admin/listar-sugestoes")
 def listar_sugestoes():
-    if not session.get('logged_in'):
-        return jsonify({"erro": "Não autorizado"}), 401
+    if not session.get('logged_in'): return jsonify({"erro": "Não autorizado"}), 401
     return jsonify(get_suggestions())
 
 @app.route("/upload_sites", methods=["POST"])
@@ -80,5 +86,4 @@ def upload_escala():
     return jsonify({"erro": "Nenhum arquivo"}), 400
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
