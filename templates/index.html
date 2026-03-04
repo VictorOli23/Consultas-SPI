@@ -44,11 +44,9 @@
         .input-wrapper input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 0 1.5rem; font-size: 1rem; outline: none; text-transform: uppercase;}
         .btn-buscar { background-color: var(--primary); color: #fff; border: none; padding: 0.8rem 2rem; border-radius: 25px; font-weight: 600; cursor: pointer; transition: 0.3s; }
         
-        /* CAIXA DO AUTOCOMPLETE */
         .autocomplete-list { position: absolute; bottom: 110%; left: 0; width: calc(100% - 120px); background-color: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; z-index: 999; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; box-shadow: 0 -4px 10px rgba(0,0,0,0.3); }
         .autocomplete-item { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid var(--border); color: var(--text-main); font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
         .autocomplete-item:hover { background-color: var(--bg-hover); }
-        .autocomplete-item:last-child { border-bottom: none; }
         .autocomplete-termo { font-weight: 700; color: var(--primary); font-size: 0.95rem;}
 
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; visibility: hidden; opacity: 0; transition: 0.3s; }
@@ -76,6 +74,9 @@
         .footer-credits { text-align: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 5px; }
         .footer-credits a { color: var(--primary); text-decoration: none; font-weight: bold; transition: color 0.2s; }
         .footer-credits a:hover { color: var(--primary-hover); text-decoration: underline; }
+
+        /* BANNER GERAL DE AVISOS */
+        #globalAlertBanner { display: none; background-color: var(--danger); color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 0.9rem; z-index: 10; width: 100%; border-bottom: 2px solid #b91c1c; }
     </style>
 </head>
 <body>
@@ -86,6 +87,10 @@
         
         <button class="btn-new-chat" onclick="limparChat()"><i class="fa-solid fa-plus"></i> Nova Busca</button>
         
+        <div class="menu-item" onclick="abrirVisaoGeral()" style="border: 1px solid var(--success); margin-bottom: 10px; color: var(--success);">
+            <span><i class="fa-solid fa-users-viewfinder" style="width: 20px;"></i> Passagem de Turno</span>
+        </div>
+
         <div class="menu-item" onclick="abrirMascaras()" style="border: 1px solid var(--border); margin-bottom: 15px;">
             <span><i class="fa-solid fa-file-signature" style="color: var(--primary); width: 20px;"></i> Máscaras Manuais</span>
         </div>
@@ -97,18 +102,21 @@
     </aside>
 
     <main class="main-chat">
+        <div id="globalAlertBanner">
+            <i class="fa-solid fa-triangle-exclamation fa-fade" style="margin-right: 8px;"></i> <span id="globalAlertText"></span>
+        </div>
+
         <div class="chat-area" id="chatArea">
             <div class="message-wrapper system">
                 <span class="message-sender">Sistema SPI</span>
-                <div class="message">Sistema Operacional Ativo. <i class="fa-solid fa-globe" style="color: var(--primary);"></i><br><span style="color: var(--text-muted);">Informe a Sigla para consultar o plantão de hoje.</span></div>
+                <div class="message">Sistema Operacional Ativo. <i class="fa-solid fa-globe" style="color: var(--primary);"></i><br><span style="color: var(--text-muted);">Pesquise por Sigla, Cidade, Base ou Técnico.</span></div>
             </div>
         </div>
         
         <footer class="input-area">
             <div class="input-wrapper">
-                <input type="text" id="siglaInput" placeholder="Ex: SJC ou PNI..." autocomplete="off">
+                <input type="text" id="siglaInput" placeholder="Ex: Campinas, SJV, João Silva..." autocomplete="off">
                 <button class="btn-buscar" id="btnBuscar" onclick="realizarBusca()">Buscar</button>
-                
                 <div id="autocompleteContainer" class="autocomplete-list"></div>
             </div>
             
@@ -132,22 +140,75 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="visaoModal">
+        <div class="modal-content" style="width: 750px; max-height: 90vh; overflow-y: auto;">
+            <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--success); border-bottom: 1px solid var(--border); padding-bottom: 10px;"><i class="fa-solid fa-users-viewfinder"></i> Plantão de Hoje (Geral)</h3>
+            <div id="visaoGeralContainer" style="color: var(--text-muted);">Carregando informações...</div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="mascarasModal">
         <div class="modal-content" style="width: 550px; max-height: 90vh; overflow-y: auto;">
             <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
             <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><i class="fa-solid fa-file-signature"></i> Máscaras de Acionamento</h3>
-            <div class="config-group"><label>Vincular Técnico (Opcional)</label><select id="selectTecnico" onchange="atualizarMascarasPeloSelect()"><option value="">Selecione um técnico da lista...</option></select></div>
+            <div class="config-group"><label>Vincular Técnico</label><select id="selectTecnico" onchange="atualizarMascarasPeloSelect()"><option value="">Selecione um técnico...</option></select></div>
             <div class="mask-card"><div style="font-size: 0.8rem; color: var(--text-muted); font-weight: bold; margin-bottom: 5px;">Acionamento Padrão</div><textarea id="txtAcionamento" style="height: 100px;">###ACIONAMENTO ###    
 Nome/Contato do Técnico:    
 Previsão de atendimento:    
 Status:    
-Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAcionamento', this)"><i class="fa-regular fa-copy"></i> Copiar Acionamento</button></div>
+Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAcionamento', this)"><i class="fa-regular fa-copy"></i> Copiar</button></div>
             <div class="mask-card"><div style="font-size: 0.8rem; color: var(--text-muted); font-weight: bold; margin-bottom: 5px;">Atualização de Status</div><textarea id="txtAtualizacao" style="height: 120px;">##### ATUALIZAÇÃO #####    
 Nome/Contato do Técnico:    
 Técnico no local?    
 Previsão de Chegada:    
 Ação realizada:    
-Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtualizacao', this)"><i class="fa-regular fa-copy"></i> Copiar Atualização</button></div>
+Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtualizacao', this)"><i class="fa-regular fa-copy"></i> Copiar</button></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-content" style="width: 350px;">
+            <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--primary); text-align: center;"><i class="fa-solid fa-right-to-bracket"></i> Login Restrito</h3>
+            <div class="config-group"><label>Usuário</label><input type="text" id="usuarioAdmin" autocomplete="off"></div>
+            <div class="config-group"><label>Senha</label><input type="password" id="senhaAdmin" autocomplete="off"></div>
+            <button class="btn-action" id="btnLoginAdmin" onclick="fazerLoginAdmin()">Entrar no Painel</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="adminModal">
+        <div class="modal-content" style="width: 650px; max-height: 85vh; overflow-y: auto;">
+            <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--warning);"><i class="fa-solid fa-lock"></i> Painel de Administração</h3>
+            
+            <div style="background-color: var(--bg-app); border: 1px solid var(--danger); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                <h4 style="margin-bottom: 1rem; color: var(--danger); font-size: 0.85rem;"><i class="fa-solid fa-bullhorn"></i> Transmitir Aviso Global (Incidente)</h4>
+                <input type="text" id="inputAviso" placeholder="Ex: 🚨 Rompimento massivo em Campinas..." style="width: 100%; padding: 10px; border-radius: 6px; background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border); margin-bottom: 10px;">
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-action" style="background:var(--danger);" onclick="publicarAviso()"><i class="fa-solid fa-broadcast-tower"></i> Publicar Alerta</button>
+                    <button class="btn-action" style="background:var(--bg-hover); color: var(--text-main);" onclick="limparAviso()"><i class="fa-solid fa-trash"></i> Remover</button>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-bottom: 1.5rem;">
+                <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="margin-bottom: 1rem; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-database"></i> Sincronizar Sites</h4>
+                    <input type="file" id="arquivoSites" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%; font-size:0.75rem;">
+                    <button class="btn-action" id="btnUploadSites" style="background-color: var(--primary);" onclick="enviarPlanilha('sites')"><i class="fa-solid fa-upload"></i> Upload Sites</button>
+                </div>
+                <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="margin-bottom: 1rem; color: var(--success); font-size: 0.85rem;"><i class="fa-solid fa-calendar-days"></i> Sincronizar Escala</h4>
+                    <input type="file" id="arquivoEscala" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%; font-size:0.75rem;">
+                    <button class="btn-action" id="btnUploadEscala" style="background-color: var(--success);" onclick="enviarPlanilha('escala')"><i class="fa-solid fa-upload"></i> Upload Escala</button>
+                </div>
+            </div>
+
+            <h4 style="margin-bottom: 10px; font-size: 0.9rem; color: var(--text-muted);"><i class="fa-solid fa-signal" style="color: var(--success);"></i> Usuários Online</h4>
+            <div id="listaOnline" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.5rem; padding: 10px; background: var(--bg-app); border-radius: 8px; border: 1px solid var(--border);">Carregando...</div>
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+            <h4 style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">Caixa de Sugestões</h4>
+            <div id="listaSugestoes" style="display: flex; flex-direction: column; gap: 10px;"></div>
         </div>
     </div>
 
@@ -164,44 +225,9 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
         </div>
     </div>
 
-    <div class="modal-overlay" id="loginModal">
-        <div class="modal-content" style="width: 350px;">
-            <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
-            <h3 style="margin-bottom: 1.5rem; color: var(--primary); text-align: center;"><i class="fa-solid fa-right-to-bracket"></i> Login Restrito</h3>
-            <div class="config-group"><label>Usuário</label><input type="text" id="usuarioAdmin" placeholder="Digite seu ID..." autocomplete="off"></div>
-            <div class="config-group"><label>Senha</label><input type="password" id="senhaAdmin" placeholder="Digite a senha..." autocomplete="off"></div>
-            <button class="btn-action" id="btnLoginAdmin" onclick="fazerLoginAdmin()">Entrar no Painel</button>
-        </div>
-    </div>
-
-    <div class="modal-overlay" id="adminModal">
-        <div class="modal-content" style="width: 650px; max-height: 85vh; overflow-y: auto;">
-            <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
-            <h3 style="margin-bottom: 1.5rem; color: var(--warning);"><i class="fa-solid fa-lock"></i> Painel de Administração</h3>
-            <div style="display: flex; gap: 15px; margin-bottom: 1.5rem;">
-                <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
-                    <h4 style="margin-bottom: 1rem; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-database"></i> Sincronizar Sites</h4>
-                    <input type="file" id="arquivoSites" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%; font-size:0.75rem;">
-                    <button class="btn-action" id="btnUploadSites" style="background-color: var(--primary);" onclick="enviarPlanilha('sites')"><i class="fa-solid fa-upload"></i> Upload Sites</button>
-                </div>
-                <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
-                    <h4 style="margin-bottom: 1rem; color: var(--success); font-size: 0.85rem;"><i class="fa-solid fa-calendar-days"></i> Sincronizar Escala</h4>
-                    <input type="file" id="arquivoEscala" accept=".xlsx, .xls" style="color: var(--text-main); margin-bottom: 1rem; width: 100%; font-size:0.75rem;">
-                    <button class="btn-action" id="btnUploadEscala" style="background-color: var(--success);" onclick="enviarPlanilha('escala')"><i class="fa-solid fa-upload"></i> Upload Escala</button>
-                </div>
-            </div>
-            <h4 style="margin-bottom: 10px; font-size: 0.9rem; color: var(--text-muted);"><i class="fa-solid fa-signal" style="color: var(--success);"></i> Usuários Online</h4>
-            <div id="listaOnline" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.5rem; padding: 10px; background: var(--bg-app); border-radius: 8px; border: 1px solid var(--border);">Carregando...</div>
-            <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
-            <h4 style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">Caixa de Sugestões</h4>
-            <div id="listaSugestoes" style="display: flex; flex-direction: column; gap: 10px;"></div>
-        </div>
-    </div>
-
     <script>
         let meuNome = localStorage.getItem('spi_nome');
-        let pingInterval;
-        let baseAutocomplete = []; // Guarda a lista de siglas do banco
+        let baseAutocomplete = [];
 
         window.onload = () => {
             if(!meuNome) document.getElementById('welcomeModal').classList.add('active');
@@ -211,8 +237,7 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
         function salvarNomeEIniciar() {
             const input = document.getElementById('inputWelcomeName').value.trim();
             if(input.length < 2) return alert("Digite um nome válido!");
-            meuNome = input;
-            localStorage.setItem('spi_nome', meuNome);
+            meuNome = input; localStorage.setItem('spi_nome', meuNome);
             document.getElementById('welcomeModal').classList.remove('active');
             iniciarSistema();
         }
@@ -221,86 +246,93 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
             document.getElementById('displayMeuNome').innerText = meuNome;
             document.getElementById('nomeUsuario').value = meuNome;
             const darPing = () => fetch('/ping', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome: meuNome})});
-            darPing(); pingInterval = setInterval(darPing, 30000);
-            atualizarHistorico(); setInterval(atualizarHistorico, 5000);
-            carregarBaseAutocomplete(); // Puxa as siglas no fundo
+            darPing(); setInterval(darPing, 30000);
+            atualizarHistoricoEAlertas(); setInterval(atualizarHistoricoEAlertas, 5000);
+            carregarBaseAutocomplete(); 
         }
 
-        // --- LÓGICA DO AUTOCOMPLETE ---
-        async function carregarBaseAutocomplete() {
+        // --- ATUALIZAR HISTÓRICO E AVISO GLOBAL ---
+        async function atualizarHistoricoEAlertas() {
+            try { 
+                const respHist = await fetch('/historico'); const lista = await respHist.json(); 
+                document.getElementById('historicoContainer').innerHTML = lista.map(i => `<div style="background: var(--bg-app); border: 1px solid var(--border); padding: 10px; border-radius: 8px; border-left: 3px solid var(--primary);"><div style="font-weight: 600; font-size: 0.8rem; margin-bottom:4px;"><span style="color:var(--text-muted);">[${i.usuario}]</span> <span style="color:var(--text-main);">${i.sigla}</span></div><div style="font-size: 0.75rem; color: var(--text-muted);">${i.status} - ${i.tempo}</div></div>`).join(''); 
+                
+                const respAviso = await fetch('/aviso'); const dadosAviso = await respAviso.json();
+                const banner = document.getElementById('globalAlertBanner');
+                if(dadosAviso.aviso) {
+                    document.getElementById('globalAlertText').innerText = dadosAviso.aviso;
+                    banner.style.display = 'block';
+                } else { banner.style.display = 'none'; }
+            } catch(e) {}
+        }
+
+        // --- PUBLICAR AVISOS ADMIN ---
+        async function publicarAviso() {
+            const texto = document.getElementById('inputAviso').value;
+            if(!texto) return alert("Digite um aviso!");
+            await fetch('/admin/aviso', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: texto}) });
+            alert("Aviso publicado para todos!"); document.getElementById('inputAviso').value = ""; atualizarHistoricoEAlertas();
+        }
+        async function limparAviso() {
+            await fetch('/admin/aviso', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: ""}) });
+            alert("Aviso removido!"); atualizarHistoricoEAlertas();
+        }
+
+        // --- VISÃO GERAL (PASSAGEM DE TURNO) ---
+        async function abrirVisaoGeral() {
+            fecharModais(); document.getElementById('visaoModal').classList.add('active');
+            const container = document.getElementById('visaoGeralContainer');
+            container.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mapeando técnicos do estado...';
             try {
-                const resp = await fetch('/autocomplete');
-                baseAutocomplete = await resp.json();
-            } catch(e) { console.log("Erro ao carregar autocomplete"); }
+                const res = await fetch('/visao_geral'); const dados = await res.json();
+                let html = '';
+                for (const [base, tecnicos] of Object.entries(dados)) {
+                    html += `<h4 style="color:var(--warning); margin-top:20px; border-bottom:1px solid var(--border); padding-bottom:5px;">📍 ${base}</h4>`;
+                    html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">`;
+                    tecnicos.forEach(t => {
+                        html += `<div style="background:var(--bg-app); padding:10px; border-radius:6px; border:1px solid var(--border); font-size:0.8rem;">
+                            <b style="color:white; font-size:0.85rem;">👨‍🔧 ${t.tecnico}</b><br>
+                            ⏰ ${t.horario} | ⚙️ ${t.segmento}<br>
+                            📞 <a href='tel:${t.contato}' style='color:var(--primary); text-decoration:none;'>${t.contato}</a>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+                if(html === '') html = '<p>Nenhum plantonista localizado para hoje.</p>';
+                container.innerHTML = html;
+            } catch(e) { container.innerHTML = 'Erro ao carregar dados do servidor.'; }
         }
 
-        const siglaInput = document.getElementById('siglaInput');
-        const autocompleteList = document.getElementById('autocompleteContainer');
-
+        // --- AUTOCOMPLETE E RESTO ---
+        async function carregarBaseAutocomplete() { try { const resp = await fetch('/autocomplete'); baseAutocomplete = await resp.json(); } catch(e) {} }
+        const siglaInput = document.getElementById('siglaInput'); const autocompleteList = document.getElementById('autocompleteContainer');
         siglaInput.addEventListener('input', function() {
-            let textoDigitado = this.value.toUpperCase();
-            autocompleteList.innerHTML = '';
-            
-            if (!textoDigitado || textoDigitado.length < 2) {
-                autocompleteList.style.display = 'none';
-                return;
-            }
-            
-            // Filtra o banco procurando na Sigla ou no Nome da Cidade
-            const filtrados = baseAutocomplete.filter(item => 
-                item.termo.includes(textoDigitado) || item.detalhe.toUpperCase().includes(textoDigitado)
-            ).slice(0, 8); // Mostra no máximo as top 8 sugestões
-            
+            let txt = this.value.toUpperCase(); autocompleteList.innerHTML = '';
+            if (txt.length < 2) { autocompleteList.style.display = 'none'; return; }
+            const filtrados = baseAutocomplete.filter(i => i.termo.includes(txt) || i.detalhe.toUpperCase().includes(txt)).slice(0, 8);
             if (filtrados.length > 0) {
                 autocompleteList.style.display = 'flex';
-                filtrados.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'autocomplete-item';
-                    div.innerHTML = `
-                        <div><span class="autocomplete-termo">${item.termo}</span> - <span style="color:var(--text-muted);">${item.detalhe}</span></div>
-                        <div style="font-size: 0.7rem; background: var(--bg-hover); padding: 2px 6px; border-radius: 4px;">${item.tipo}</div>
-                    `;
-                    // Quando clica na sugestão, joga no input e já busca!
-                    div.onclick = function() {
-                        siglaInput.value = item.termo;
-                        autocompleteList.style.display = 'none';
-                        realizarBusca(); 
-                    };
+                filtrados.forEach(i => {
+                    const div = document.createElement('div'); div.className = 'autocomplete-item';
+                    div.innerHTML = `<div><span class="autocomplete-termo">${i.termo}</span> - <span style="color:var(--text-muted);">${i.detalhe}</span></div><div style="font-size: 0.7rem; background: var(--bg-hover); padding: 2px 6px; border-radius: 4px;">${i.tipo}</div>`;
+                    div.onclick = function() { siglaInput.value = i.termo; autocompleteList.style.display = 'none'; realizarBusca(); };
                     autocompleteList.appendChild(div);
                 });
-            } else {
-                autocompleteList.style.display = 'none';
-            }
+            } else { autocompleteList.style.display = 'none'; }
         });
+        document.addEventListener('click', function(e) { if (e.target !== siglaInput) autocompleteList.style.display = 'none'; });
 
-        // Fecha o autocomplete se clicar fora
-        document.addEventListener('click', function(e) {
-            if (e.target !== siglaInput) autocompleteList.style.display = 'none';
-        });
-
-        // --- RESTANTE DO CÓDIGO (UI e ADMIN) ---
         function fecharModais() { document.querySelectorAll('.modal-overlay').forEach(m => { if(m.id !== 'welcomeModal') m.classList.remove('active'); }); }
         function abrirConfig() { fecharModais(); document.getElementById('configModal').classList.add('active'); }
         function abrirTelaLogin() { fecharModais(); document.getElementById('usuarioAdmin').value = ""; document.getElementById('senhaAdmin').value = ""; document.getElementById('loginModal').classList.add('active'); }
         function trocarTema() { if (document.getElementById('temaToggle').checked) document.body.classList.add('light-mode'); else document.body.classList.remove('light-mode'); }
         function limparChat() { document.getElementById('chatArea').innerHTML = `<div class="message-wrapper system"><div class="message">Chat reiniciado.</div></div>`; }
 
-        async function carregarSelectTecnicos() {
-            const select = document.getElementById('selectTecnico');
-            if(select.options.length <= 1) {
-                select.innerHTML = '<option value="">Carregando técnicos...</option>';
-                try { const res = await fetch('/tecnicos'); const tecnicos = await res.json(); select.innerHTML = '<option value="">Selecione o Técnico (Lista da Escala)...</option>'; tecnicos.forEach(t => { select.innerHTML += `<option value="${t.nome} - ${t.contato}">${t.nome} (${t.contato})</option>`; }); } catch(e) { select.innerHTML = '<option value="">Erro ao carregar</option>'; }
-            }
-        }
-
+        async function carregarSelectTecnicos() { const select = document.getElementById('selectTecnico'); if(select.options.length <= 1) { select.innerHTML = '<option value="">Carregando técnicos...</option>'; try { const res = await fetch('/tecnicos'); const tecnicos = await res.json(); select.innerHTML = '<option value="">Selecione o Técnico (Lista da Escala)...</option>'; tecnicos.forEach(t => { select.innerHTML += `<option value="${t.nome} - ${t.contato}">${t.nome} (${t.contato})</option>`; }); } catch(e) { select.innerHTML = '<option value="">Erro ao carregar</option>'; } } }
         function abrirMascaras() { fecharModais(); document.getElementById('mascarasModal').classList.add('active'); carregarSelectTecnicos(); }
         function abrirMascarasComTecnico(n, c) { fecharModais(); document.getElementById('mascarasModal').classList.add('active'); carregarSelectTecnicos(); const v = `Nome/Contato do Técnico: ${n} - ${c}`; document.getElementById('txtAcionamento').value = document.getElementById('txtAcionamento').value.replace(/Nome\/Contato do Técnico:.*/, v); document.getElementById('txtAtualizacao').value = document.getElementById('txtAtualizacao').value.replace(/Nome\/Contato do Técnico:.*/, v); }
         function atualizarMascarasPeloSelect() { const tech = document.getElementById('selectTecnico').value; const v = tech ? `Nome/Contato do Técnico: ${tech}` : `Nome/Contato do Técnico:    `; document.getElementById('txtAcionamento').value = document.getElementById('txtAcionamento').value.replace(/Nome\/Contato do Técnico:.*/, v); document.getElementById('txtAtualizacao').value = document.getElementById('txtAtualizacao').value.replace(/Nome\/Contato do Técnico:.*/, v); }
         function copiarMask(id, btn) { document.getElementById(id).select(); navigator.clipboard.writeText(document.getElementById(id).value).then(() => { const txtOri = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado!'; btn.style.background = "var(--success)"; btn.style.color = "white"; setTimeout(() => { btn.innerHTML = txtOri; btn.style.background = "var(--bg-hover)"; btn.style.color = "var(--text-main)"; }, 2000); }); }
-
-        async function atualizarHistorico() {
-            try { const resp = await fetch('/historico'); const lista = await resp.json(); document.getElementById('historicoContainer').innerHTML = lista.map(i => `<div style="background: var(--bg-app); border: 1px solid var(--border); padding: 10px; border-radius: 8px; border-left: 3px solid var(--primary);"><div style="font-weight: 600; font-size: 0.8rem; margin-bottom:4px;"><span style="color:var(--text-muted);">[${i.usuario}]</span> <span style="color:var(--text-main);">${i.sigla}</span></div><div style="font-size: 0.75rem; color: var(--text-muted);">${i.status} - ${i.tempo}</div></div>`).join(''); } catch(e) {}
-        }
 
         async function realizarBusca() {
             const input = document.getElementById('siglaInput'); const s = input.value.trim().toUpperCase(); const chat = document.getElementById('chatArea');
@@ -320,7 +352,7 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
                     txt += `<div style="display: flex; gap: 15px; margin-top: 15px;"><div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);"><h4 style="color: var(--primary); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-server"></i> INFRA</h4><div style="font-size: 0.85rem;">${iCol}</div></div><div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);"><h4 style="color: var(--warning); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-satellite-dish"></i> TX</h4><div style="font-size: 0.85rem;">${tCol}</div></div></div>`;
                 }
                 chat.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message" style="width:100%; max-width:100%;">${txt}</div></div>`;
-                chat.scrollTop = chat.scrollHeight; atualizarHistorico();
+                chat.scrollTop = chat.scrollHeight; atualizarHistoricoEAlertas();
             } catch (e) { document.getElementById(id).remove(); chat.innerHTML += `<div class="message-wrapper system"><div class="message" style="color:var(--warning)">Erro de servidor.</div></div>`; }
         }
         document.getElementById('siglaInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') realizarBusca(); });
