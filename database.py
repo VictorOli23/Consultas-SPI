@@ -41,26 +41,33 @@ def init_db():
     except: pass
     conn.close()
 
-# --- NOVO: COLETA DADOS PARA O AUTOCOMPLETE ---
+# --- ATUALIZADO: AUTOCOMPLETE AGORA MOSTRA TÉCNICOS E CIDADES ---
 def get_autocomplete_data():
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Pega os Sites
     cursor.execute("SELECT sigla, nome_da_localidade FROM sites")
     sites = cursor.fetchall()
     
-    # Pega as Bases (CM)
     cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
     bases = cursor.fetchall()
+    
+    cursor.execute("SELECT DISTINCT tecnico FROM escala WHERE tecnico != ''")
+    tecnicos = cursor.fetchall()
     
     conn.close()
     
     resultado = []
     for s in sites:
         resultado.append({"termo": s['sigla'], "detalhe": s['nome_da_localidade'], "tipo": "📍 Site"})
+        if s['nome_da_localidade']: 
+            resultado.append({"termo": s['nome_da_localidade'], "detalhe": s['sigla'], "tipo": "🏙️ Cidade"})
+            
     for b in bases:
         if b['cm']: resultado.append({"termo": b['cm'], "detalhe": "Região Inteira", "tipo": "🗺️ Base"})
+        
+    for t in tecnicos:
+        if t['tecnico']: resultado.append({"termo": t['tecnico'], "detalhe": "Plantonista", "tipo": "👨‍🔧 Técnico"})
         
     return resultado
 
@@ -238,6 +245,8 @@ def process_excel_escala(file_path):
     conn.commit()
     conn.close()
 
+
+# --- ATUALIZADO: MOTOR DE BUSCA COM 5 CAMADAS (INCLUI TÉCNICO E CIDADE) ---
 def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -246,9 +255,9 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     mes_alvo = data_consulta.split('/')[1] if data_consulta and '/' in data_consulta else str(hoje.month)
     termo = user_text.strip().upper()
 
+    # CAMADA 1: TENTA ACHAR COMO NOME DA PLANILHA (Ex: 19CAS)
     cursor.execute("SELECT DISTINCT ddd_aba FROM escala WHERE ddd_aba ILIKE %s", (f"%{termo}%",))
     abas_encontradas = [r['ddd_aba'] for r in cursor.fetchall()]
-    
     if abas_encontradas and "CAS" in termo:
         cursor.execute("SELECT * FROM escala WHERE ddd_aba IN %s AND dia_mes = %s", (tuple(abas_encontradas), dia_alvo))
         plantoes = cursor.fetchall()
@@ -268,6 +277,30 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return resposta
 
+    # CAMADA 2: TENTA ACHAR COMO NOME DO TÉCNICO (Ex: João Silva)
+    cursor.execute("SELECT DISTINCT tecnico FROM escala WHERE tecnico != ''")
+    tecnicos_db = [r['tecnico'] for r in cursor.fetchall()]
+    match_tec = process.extractOne(termo, tecnicos_db)
+    if match_tec and match_tec[1] >= 85:
+        cursor.execute("SELECT * FROM escala WHERE tecnico = %s AND dia_mes = %s", (match_tec[0], dia_alvo))
+        plantoes = cursor.fetchall()
+        if plantoes:
+            resposta = {"encontrado": True, "cabecalho": f"👨‍🔧 <b>Técnico(a): {match_tec[0]}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Plantões encontrados para este técnico hoje", "infra": [], "tx": []}
+            save_historico(nome_usuario, match_tec[0], "Localizado (Técnico)")
+            for p in plantoes:
+                h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
+                tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
+                contato_safe = str(p['contato_corp']).replace("'", "").replace('"', '')
+                nome_base_visual = f" <span style='font-size:0.75rem; color:var(--warning);'>({p['cm']})</span>" if p['cm'] else ""
+                tec_info = f"<div style='margin-bottom: 10px;'><span style='color:var(--primary); cursor:pointer; font-weight:bold; text-decoration:underline;' onclick=\"abrirMascarasComTecnico('{tec_safe}', '{contato_safe}')\" title='Criar Máscara'>👨‍🔧 {p['tecnico']}{nome_base_visual} <i class='fa-solid fa-share-from-square' style='font-size:0.85em;'></i></span><br>⏰ {h_fmt}<br>"
+                if p['segmento'] and p['segmento'] != 'Não especificado': tec_info += f"⚙️ {p['segmento']}<br>"
+                tec_info += f"📞 <a href='tel:{p['contato_corp']}' style='color:#38bdf8; text-decoration:none;'>{p['contato_corp']}</a><br>👤 Sup: {p['supervisor']}</div><hr style='border-top:1px dashed var(--border); margin:8px 0;'>"
+                if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
+                else: resposta["tx"].append(tec_info)
+            conn.close()
+            return resposta
+
+    # CAMADA 3: TENTA ACHAR COMO REGIÃO / BASE (Ex: Metropolitana)
     cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
     bases_db = [r['cm'] for r in cursor.fetchall()]
     match_base = process.extractOne(termo, bases_db)
@@ -290,22 +323,34 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return resposta
 
+    # CAMADAS 4 E 5: TENTA ACHAR COMO SIGLA (SJV) OU NOME DA CIDADE (São João da Boa Vista)
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
+    cidades = [r['nome_da_localidade'] for r in sites_db if r['nome_da_localidade']]
+    
     match_sigla = process.extractOne(termo, siglas)
-    if match_sigla and match_sigla[1] > 80:
-        site = next((s for s in sites_db if s['sigla'] == match_sigla[0]), None)
-        cm_banco = site.get('cm_responsavel', '').strip()
-        cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else match_sigla[0][:3]
+    match_cidade = process.extractOne(termo, cidades)
+    
+    site_encontrado = None
+    if match_sigla and match_sigla[1] > 85:
+        site_encontrado = next((s for s in sites_db if s['sigla'] == match_sigla[0]), None)
+    elif match_cidade and match_cidade[1] > 85:
+        site_encontrado = next((s for s in sites_db if s['nome_da_localidade'] == match_cidade[0]), None)
+    elif match_sigla and match_sigla[1] > 70: # Fallback
+        site_encontrado = next((s for s in sites_db if s['sigla'] == match_sigla[0]), None)
+
+    if site_encontrado:
+        cm_banco = site_encontrado.get('cm_responsavel', '').strip()
+        cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else site_encontrado['sigla'][:3]
         
         cursor.execute("SELECT * FROM escala WHERE cm ILIKE %s AND dia_mes = %s", (f"%{cm_busca}%", dia_alvo))
         plantoes = cursor.fetchall()
         conn.close()
-        resposta = {"encontrado": True, "cabecalho": f"📍 <b>{site['nome_da_localidade']} ({match_sigla[0]})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site['ddd']} | Base: {cm_busca}", "infra": [], "tx": []}
+        resposta = {"encontrado": True, "cabecalho": f"📍 <b>{site_encontrado['nome_da_localidade']} ({site_encontrado['sigla']})</b><br>📅 Data de Busca: {dia_alvo}/{mes_alvo} | DDD: {site_encontrado['ddd']} | Base: {cm_busca}", "infra": [], "tx": []}
         
         if plantoes:
-            save_historico(nome_usuario, match_sigla[0], "Localizado")
+            save_historico(nome_usuario, site_encontrado['sigla'], "Localizado")
             for p in plantoes:
                 h_fmt = LEGENDA_HORARIOS.get(p['horario'], f"Escala {p['horario']}")
                 tec_safe = str(p['tecnico']).replace("'", "").replace('"', '')
@@ -316,10 +361,10 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
                 if 'INFRA' in p['segmento'].upper(): resposta["infra"].append(tec_info)
                 else: resposta["tx"].append(tec_info)
         else:
-             save_historico(nome_usuario, match_sigla[0], "Sem cobertura")
+             save_historico(nome_usuario, site_encontrado['sigla'], "Sem cobertura")
              resposta["erro"] = f"⚠️ Nenhum técnico exclusivo da base <b>{cm_busca}</b> de plantão hoje."
         return resposta
     
     conn.close()
     save_historico(nome_usuario, termo[:10], "Inválido")
-    return {"encontrado": False, "erro": "Sigla, Base ou Planilha não encontrada."}
+    return {"encontrado": False, "erro": "Não localizamos Site, Cidade, Técnico ou Base com esse nome."}
