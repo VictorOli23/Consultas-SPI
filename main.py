@@ -27,7 +27,7 @@ def chat():
     resultado = query_data(dados.get("message"), dados.get("data"), dados.get("nome", "Anônimo"))
     return jsonify({"response": resultado})
 
-# --- ROTA DE INTELIGÊNCIA ARTIFICIAL (À PROVA DE ERRO 404) ---
+# --- ROTA DE INTELIGÊNCIA ARTIFICIAL (AUTO-DISCOVERY DE MODELOS) ---
 @app.route("/chat_ia", methods=["POST"])
 def chat_ia():
     dados = request.json
@@ -37,22 +37,28 @@ def chat_ia():
         return jsonify({"texto": "A chave da API da IA não foi configurada."})
 
     try:
-        # 1. PERGUNTA AO GOOGLE QUAIS MODELOS SUA CHAVE PODE ACESSAR
-        modelos_disponiveis = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # 1. PERGUNTA AO GOOGLE QUAIS MODELOS ESSA CHAVE TEM ACESSO
+        modelos_disponiveis = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                # Remove o prefixo 'models/' se vier, para evitar bug de leitura
+                nome_limpo = m.name.replace('models/', '')
+                modelos_disponiveis.append(nome_limpo)
         
         if not modelos_disponiveis:
-            return jsonify({"texto": "Erro: A sua chave de API do Google não tem permissão para nenhum modelo de texto."})
+            return jsonify({"texto": "Erro: A sua chave de API do Google é válida, mas não tem permissão para usar nenhum modelo de texto no momento."})
         
-        # 2. ESCOLHE AUTOMATICAMENTE O MELHOR MODELO DA LISTA
-        modelo_escolhido = modelos_disponiveis[0] # Pega o primeiro como garantia
-        for m in modelos_disponiveis:
-            if 'gemini-1.5-flash' in m:
-                modelo_escolhido = m
+        # 2. ESCOLHE O MELHOR MODELO DA LISTA AUTOMATICAMENTE
+        modelo_escolhido = modelos_disponiveis[0] # Pega o primeiro por segurança
+        
+        # Ordem de preferência de inteligência do Google
+        preferencias = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
+        for pref in preferencias:
+            if pref in modelos_disponiveis:
+                modelo_escolhido = pref
                 break
-            elif 'gemini-1.0-pro' in m:
-                modelo_escolhido = m
         
-        # 3. INICIA A IA COM O MODELO QUE EXISTE
+        # 3. INSTANCIA O MODELO GARANTIDO QUE EXISTE NA SUA CONTA
         model = genai.GenerativeModel(modelo_escolhido)
         
         prompt_sistema = """Você é um Assistente Sênior de NOC (Network Operations Center) especializado em Telecom e Infraestrutura.
@@ -76,14 +82,14 @@ def chat_ia():
         response = model.generate_content(prompt_sistema + "\n\nUsuário diz: " + mensagem_usuario)
         texto_ia = response.text
         
-        # Interceptador de comando para alterar a escala
+        # Função secreta de alterar a escala
         if "[UPDATE_DB|" in texto_ia:
             linhas = texto_ia.split('\n')
             comando = [l for l in linhas if "[UPDATE_DB|" in l][0]
             texto_limpo = texto_ia.replace(comando, "").strip()
             
             partes = comando.replace("[", "").replace("]", "").split("|")
-            if len(partes) >= 3:
+            if len(partes) == 3:
                 nome_tec = partes[1]
                 novo_status = partes[2]
                 resultado_db = atualizar_tecnico_dinamico(nome_tec, novo_status)
@@ -96,7 +102,9 @@ def chat_ia():
         return jsonify({"texto": texto_html})
         
     except Exception as e:
-        return jsonify({"texto": f"Ocorreu um erro ao consultar a IA. Detalhe técnico: {str(e)}"})
+        # SE DER ERRO, VAI IMPRIMIR A LISTA DE MODELOS DA SUA CHAVE NA TELA PRA GENTE VER!
+        debug_info = f"<b>Falha de conexão com a IA.</b><br>Erro técnico: {str(e)}<br><br><b>Modelos liberados na sua chave do Google:</b><br>{', '.join(modelos_disponiveis) if 'modelos_disponiveis' in locals() else 'Nenhum modelo lido'}<br><br><i>A IA tentou usar o modelo: {modelo_escolhido if 'modelo_escolhido' in locals() else 'Desconhecido'}</i>"
+        return jsonify({"texto": debug_info})
 
 @app.route("/autocomplete", methods=["GET"])
 def autocomplete(): return jsonify(get_autocomplete_data())
