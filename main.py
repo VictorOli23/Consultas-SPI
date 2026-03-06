@@ -37,7 +37,8 @@ def chat_ia():
         return jsonify({"texto": "A chave da API da IA não foi configurada."})
 
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        # --- A CORREÇÃO ESTÁ AQUI: Atualizado para o modelo gemini-1.5-flash ---
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt_sistema = """Você é um Assistente Sênior de NOC (Network Operations Center) especializado em Telecom e Infraestrutura.
         Sua missão é ajudar analistas a traduzirem logs complexos e acionarem as equipes de campo. Use formatação HTML <b> para negrito e <ul><li> para listas.
