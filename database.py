@@ -45,13 +45,28 @@ def init_db():
     except: pass
     conn.close()
 
-# --- SISTEMA DE AVISOS GLOBAIS ---
+def atualizar_tecnico_dinamico(nome_incompleto, novo_status):
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT DISTINCT tecnico FROM escala WHERE tecnico != ''")
+    tecnicos_db = [r['tecnico'] for r in cursor.fetchall()]
+    match_tec = process.extractOne(nome_incompleto, tecnicos_db)
+    if match_tec and match_tec[1] >= 75:
+        nome_oficial = match_tec[0]
+        hoje = datetime.now() - timedelta(hours=3)
+        dia_alvo = str(hoje.day)
+        cursor.execute("UPDATE escala SET horario = %s WHERE tecnico = %s AND dia_mes = %s", (novo_status.upper(), nome_oficial, dia_alvo))
+        conn.commit()
+        conn.close()
+        return f"Escala de **{nome_oficial}** alterada para **{novo_status.upper()}** com sucesso para o dia de hoje!"
+    conn.close()
+    return f"Não encontrei nenhum técnico parecido com '{nome_incompleto}' na base de dados para alterar."
+
 def set_aviso(texto):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE avisos SET ativo = FALSE") # Desativa os velhos
-    if texto.strip():
-        cursor.execute("INSERT INTO avisos (texto, ativo) VALUES (%s, TRUE)", (texto,))
+    cursor.execute("UPDATE avisos SET ativo = FALSE")
+    if texto.strip(): cursor.execute("INSERT INTO avisos (texto, ativo) VALUES (%s, TRUE)", (texto,))
     conn.commit()
     conn.close()
 
@@ -63,17 +78,14 @@ def get_aviso():
     conn.close()
     return row['texto'] if row else ""
 
-# --- PASSAGEM DE TURNO (VISÃO GERAL) ---
 def get_visao_geral():
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     hoje = datetime.now() - timedelta(hours=3)
     dia_alvo = str(hoje.day)
-    
     cursor.execute("SELECT * FROM escala WHERE dia_mes = %s AND tecnico != '' ORDER BY cm ASC, tecnico ASC", (dia_alvo,))
     plantoes = cursor.fetchall()
     conn.close()
-    
     resultado = {}
     for p in plantoes:
         base = p['cm'] if p['cm'] else 'SEM BASE/OUTROS'
@@ -82,23 +94,20 @@ def get_visao_geral():
         resultado[base].append({"tecnico": p['tecnico'], "contato": p['contato_corp'], "horario": h_fmt, "segmento": p['segmento']})
     return resultado
 
-# --- API DE CLIMA ---
 def get_clima(cidade):
     if not cidade: return ""
     try:
-        cidade_limpa = cidade.split('-')[0].strip() # Pega só o nome da cidade, ignora siglas depois do traço
+        cidade_limpa = cidade.split('-')[0].split('/')[0].strip()
         cidade_encoded = urllib.parse.quote(f"{cidade_limpa},BR")
         api_key = "6abae122cfa3da2782b88a9b7b17ced7"
         url = f"https://api.openweathermap.org/data/2.5/weather?q={cidade_encoded}&appid={api_key}&units=metric&lang=pt_br"
-        
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=2) as response:
             dados = json.loads(response.read().decode())
             temp = round(dados['main']['temp'])
             desc = dados['weather'][0]['description'].capitalize()
             return f"<br>☁️ <b>Clima Agora:</b> {temp}°C - {desc}"
-    except Exception:
-        return "" # Se falhar (cidade não achada), não quebra o chat, só retorna vazio.
+    except Exception: return ""
 
 def get_autocomplete_data():
     conn = get_connection()
@@ -110,7 +119,6 @@ def get_autocomplete_data():
     cursor.execute("SELECT DISTINCT tecnico FROM escala WHERE tecnico != ''")
     tecnicos = cursor.fetchall()
     conn.close()
-    
     resultado = []
     for s in sites:
         resultado.append({"termo": s['sigla'], "detalhe": s['nome_da_localidade'], "tipo": "📍 Site"})
@@ -187,7 +195,6 @@ def process_excel_sites(file_path):
     conn = get_connection()
     cursor = conn.cursor()
     dados_dict = {}
-
     for sheet in xl.sheet_names:
         df = xl.parse(sheet, dtype=str).fillna('')
         header_idx = -1
@@ -195,7 +202,6 @@ def process_excel_sites(file_path):
             row_str = " ".join([str(v).upper() for v in row.values])
             if 'SIGLA' in row_str:
                 header_idx = i; break
-                
         if header_idx != -1:
             df.columns = [str(c).strip().upper().replace(' ', '').replace('Í', 'I').replace('Ó', 'O') for c in df.iloc[header_idx]]
             df = df.iloc[header_idx + 1:]
@@ -230,7 +236,6 @@ def process_excel_escala(file_path):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM escala")
-    
     abas_alvo = xl.sheet_names
     chaves_vistas = set()
     all_rows = []
@@ -240,7 +245,6 @@ def process_excel_escala(file_path):
         df = xl.parse(aba, dtype=str).fillna('')
         header_row = []
         df_dados = df
-        
         if any('FUNCION' in str(c).strip().upper() for c in df.columns): header_row = df.columns
         else:
             for i, row in df.iterrows():
@@ -279,7 +283,6 @@ def process_excel_escala(file_path):
             supervisor = str(row_vals[sup_idx]).replace('nan', '').strip() if sup_idx != -1 and len(row_vals) > sup_idx else ''
             cm = str(row_vals[cm_idx]).replace('nan', '').strip().upper() if cm_idx != -1 and len(row_vals) > cm_idx else ''
             segmento = str(row_vals[seg_idx]).replace('nan', '').strip() if seg_idx != -1 and len(row_vals) > seg_idx else 'Não especificado'
-            
             for d_idx, d_limpo in dias_idx_map.items():
                 if len(row_vals) > d_idx:
                     plantao_val = str(row_vals[d_idx]).strip().upper()
@@ -316,7 +319,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     mes_alvo = data_consulta.split('/')[1] if data_consulta and '/' in data_consulta else str(hoje.month)
     termo = user_text.strip().upper()
 
-    # CAMADA 1: ABA/PLANILHA
     cursor.execute("SELECT DISTINCT ddd_aba FROM escala WHERE ddd_aba ILIKE %s", (f"%{termo}%",))
     abas_encontradas = [r['ddd_aba'] for r in cursor.fetchall()]
     if abas_encontradas and "CAS" in termo:
@@ -328,7 +330,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return {"encontrado": True, "cabecalho": f"📍 <b>Planilha(s): {', '.join(abas_encontradas)}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas desta aba", "infra": infra, "tx": tx}
 
-    # CAMADA 2: TÉCNICO
     cursor.execute("SELECT DISTINCT tecnico FROM escala WHERE tecnico != ''")
     tecnicos_db = [r['tecnico'] for r in cursor.fetchall()]
     match_tec = process.extractOne(termo, tecnicos_db)
@@ -341,7 +342,6 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
             conn.close()
             return {"encontrado": True, "cabecalho": f"👨‍🔧 <b>Técnico(a): {match_tec[0]}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Plantões encontrados para este técnico hoje", "infra": infra, "tx": tx}
 
-    # CAMADA 3: BASE
     cursor.execute("SELECT DISTINCT cm FROM escala WHERE cm != ''")
     bases_db = [r['cm'] for r in cursor.fetchall()]
     match_base = process.extractOne(termo, bases_db)
@@ -352,10 +352,15 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
         if plantoes:
             infra, tx = formatar_tecnicos(plantoes)
             save_historico(nome_usuario, cm_busca, "Localizado (Região)")
+            cursor.execute("SELECT nome_da_localidade FROM sites WHERE cm_responsavel = %s AND nome_da_localidade != '' LIMIT 1", (cm_busca,))
+            ref_city = cursor.fetchone()
+            clima_str = ""
+            if ref_city and ref_city['nome_da_localidade']:
+                clima_bruto = get_clima(ref_city['nome_da_localidade'])
+                if clima_bruto: clima_str = clima_bruto.replace("Clima Agora:", f"Clima ref. {ref_city['nome_da_localidade'].split('-')[0].strip()}:")
             conn.close()
-            return {"encontrado": True, "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região", "infra": infra, "tx": tx}
+            return {"encontrado": True, "cabecalho": f"📍 <b>Região / Base: {cm_busca}</b><br>📅 Data: {dia_alvo}/{mes_alvo} | Todos os plantonistas da região{clima_str}", "infra": infra, "tx": tx}
 
-    # CAMADA 4/5: SIGLA OU CIDADE
     cursor.execute("SELECT sigla, nome_da_localidade, ddd, cm_responsavel FROM sites")
     sites_db = cursor.fetchall()
     siglas = [r['sigla'] for r in sites_db]
@@ -372,16 +377,11 @@ def query_data(user_text, data_consulta=None, nome_usuario="Anônimo"):
     if site_encontrado:
         cm_banco = site_encontrado.get('cm_responsavel', '').strip()
         cm_busca = cm_banco if cm_banco and cm_banco != 'NAN' else site_encontrado['sigla'][:3]
-        
         cursor.execute("SELECT * FROM escala WHERE cm ILIKE %s AND dia_mes = %s", (f"%{cm_busca}%", dia_alvo))
         plantoes = cursor.fetchall()
         conn.close()
-        
-        # CHAMA A API DE CLIMA
         clima_str = get_clima(site_encontrado['nome_da_localidade'])
-        
         resposta = {"encontrado": True, "cabecalho": f"📍 <b>{site_encontrado['nome_da_localidade']} ({site_encontrado['sigla']})</b><br>📅 Data: {dia_alvo}/{mes_alvo} | DDD: {site_encontrado['ddd']} | Base: {cm_busca}{clima_str}", "infra": [], "tx": []}
-        
         if plantoes:
             resposta["infra"], resposta["tx"] = formatar_tecnicos(plantoes)
             save_historico(nome_usuario, site_encontrado['sigla'], "Localizado")
