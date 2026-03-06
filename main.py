@@ -11,8 +11,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 init_db()
 
-# --- CONFIGURAÇÃO DA IA DO GOOGLE COM A SUA NOVA CHAVE ---
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyC6FYS0l0kmtXft-ygV_RPQcSVZa_AsAcw")
+# --- CONFIGURAÇÃO SEGURA DA IA DO GOOGLE ---
+# Agora ele puxa a chave do cofre do Render, protegendo contra o bloqueio do GitHub!
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
@@ -27,14 +28,14 @@ def chat():
     resultado = query_data(dados.get("message"), dados.get("data"), dados.get("nome", "Anônimo"))
     return jsonify({"response": resultado})
 
-# --- ROTA DE INTELIGÊNCIA ARTIFICIAL ATUALIZADA ---
+# --- ROTA DE INTELIGÊNCIA ARTIFICIAL (AUTO-DISCOVERY DE MODELOS) ---
 @app.route("/chat_ia", methods=["POST"])
 def chat_ia():
     dados = request.json
     mensagem_usuario = dados.get("message")
     
     if not GEMINI_KEY:
-        return jsonify({"texto": "A chave da API da IA não foi configurada."})
+        return jsonify({"texto": "A chave da API da IA não foi configurada nas variáveis de ambiente do servidor Render."})
 
     try:
         # 1. PERGUNTA AO GOOGLE QUAIS MODELOS ESSA CHAVE TEM ACESSO
@@ -47,7 +48,7 @@ def chat_ia():
         if not modelos_disponiveis:
             return jsonify({"texto": "Erro: A sua chave de API do Google é válida, mas não tem permissão para usar nenhum modelo de texto no momento."})
         
-        # 2. ESCOLHE O MELHOR MODELO (Com prioridade para o Flash Latest da sua nova chave)
+        # 2. ESCOLHE O MELHOR MODELO AUTOMATICAMENTE
         modelo_escolhido = modelos_disponiveis[0] 
         
         preferencias = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-flash-latest', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
@@ -56,7 +57,7 @@ def chat_ia():
                 modelo_escolhido = pref
                 break
         
-        # 3. INSTANCIA O MODELO
+        # 3. INSTANCIA O MODELO GARANTIDO QUE EXISTE NA SUA CONTA
         model = genai.GenerativeModel(modelo_escolhido)
         
         prompt_sistema = """Você é um Assistente Sênior de NOC (Network Operations Center) especializado em Telecom e Infraestrutura.
@@ -80,7 +81,7 @@ def chat_ia():
         response = model.generate_content(prompt_sistema + "\n\nUsuário diz: " + mensagem_usuario)
         texto_ia = response.text
         
-        # Interceptador de comando para alterar a escala
+        # Função secreta de alterar a escala
         if "[UPDATE_DB|" in texto_ia:
             linhas = texto_ia.split('\n')
             comando = [l for l in linhas if "[UPDATE_DB|" in l][0]
