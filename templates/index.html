@@ -11,6 +11,7 @@
             --bg-app: #0f172a; --bg-panel: #1e293b; --bg-hover: #334155;
             --primary: #0ea5e9; --primary-hover: #0284c7; --text-main: #f8fafc;
             --text-muted: #94a3b8; --border: #334155; --warning: #eab308; --success: #22c55e; --danger: #ef4444;
+            --ai-color: #8b5cf6;
         }
         body.light-mode {
             --bg-app: #f1f5f9; --bg-panel: #ffffff; --bg-hover: #e2e8f0;
@@ -30,6 +31,12 @@
         .menu-item:hover { background-color: var(--bg-hover); }
 
         .main-chat { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-app); position: relative; }
+        
+        /* BOTÃO DE LIGAR/DESLIGAR A IA (FICA NO TOPO DO CHAT) */
+        .chat-header { background: var(--bg-panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: flex-end; align-items: center; }
+        .btn-toggle-ia { background: transparent; color: var(--text-main); border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: 0.3s; display: flex; align-items: center; gap: 8px; }
+        .btn-toggle-ia.active { background: var(--ai-color); color: white; border-color: var(--ai-color); box-shadow: 0 0 10px rgba(139, 92, 246, 0.4); }
+
         .chat-area { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
         .message-wrapper { display: flex; width: 100%; flex-direction: column; }
         .system { align-items: flex-start; }
@@ -38,10 +45,13 @@
         .message { max-width: 90%; padding: 1rem 1.2rem; border-radius: 12px; line-height: 1.5; font-size: 0.95rem; }
         .system .message { background-color: var(--bg-panel); border-bottom-left-radius: 4px; border: 1px solid var(--border); }
         .user .message { background-color: var(--primary); color: #fff; border-bottom-right-radius: 4px; font-weight: 500; }
+        
+        /* DEIXA A MENSAGEM DA IA ROXINHA DO LADO */
+        .ai-message { border-left: 3px solid var(--ai-color) !important; }
 
         .input-area { padding: 1.5rem 2rem; background-color: var(--bg-panel); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; position: relative;}
         .input-wrapper { display: flex; background-color: var(--bg-app); border: 1px solid var(--border); border-radius: 30px; padding: 0.4rem; position: relative;}
-        .input-wrapper input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 0 1.5rem; font-size: 1rem; outline: none; text-transform: uppercase;}
+        .input-wrapper input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 0 1.5rem; font-size: 1rem; outline: none; }
         .btn-buscar { background-color: var(--primary); color: #fff; border: none; padding: 0.8rem 2rem; border-radius: 25px; font-weight: 600; cursor: pointer; transition: 0.3s; }
         
         .autocomplete-list { position: absolute; bottom: 110%; left: 0; width: calc(100% - 120px); background-color: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; z-index: 999; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; box-shadow: 0 -4px 10px rgba(0,0,0,0.3); }
@@ -75,7 +85,6 @@
         .footer-credits a { color: var(--primary); text-decoration: none; font-weight: bold; transition: color 0.2s; }
         .footer-credits a:hover { color: var(--primary-hover); text-decoration: underline; }
 
-        /* BANNER GERAL DE AVISOS */
         #globalAlertBanner { display: none; background-color: var(--danger); color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 0.9rem; z-index: 10; width: 100%; border-bottom: 2px solid #b91c1c; }
     </style>
 </head>
@@ -102,9 +111,13 @@
     </aside>
 
     <main class="main-chat">
-        <div id="globalAlertBanner">
-            <i class="fa-solid fa-triangle-exclamation fa-fade" style="margin-right: 8px;"></i> <span id="globalAlertText"></span>
-        </div>
+        <div id="globalAlertBanner"><i class="fa-solid fa-triangle-exclamation fa-fade" style="margin-right: 8px;"></i> <span id="globalAlertText"></span></div>
+
+        <header class="chat-header">
+            <button id="btnModeIA" class="btn-toggle-ia" onclick="toggleIAMode()">
+                <i class="fa-solid fa-robot"></i> <span>Transformar em Chat IA</span>
+            </button>
+        </header>
 
         <div class="chat-area" id="chatArea">
             <div class="message-wrapper system">
@@ -119,10 +132,7 @@
                 <button class="btn-buscar" id="btnBuscar" onclick="realizarBusca()">Buscar</button>
                 <div id="autocompleteContainer" class="autocomplete-list"></div>
             </div>
-            
-            <div class="footer-credits">
-                © 2026 Consultas SPI | Desenvolvido por <a href="https://github.com/VictorOli23" target="_blank"><i class="fa-brands fa-github"></i> Victor Henrique de Oliveira</a>. Todos os direitos reservados.
-            </div>
+            <div class="footer-credits">© 2026 Consultas SPI | Desenvolvido por <a href="https://github.com/VictorOli23" target="_blank"><i class="fa-brands fa-github"></i> Victor Henrique de Oliveira</a>. Todos os direitos reservados.</div>
         </footer>
     </main>
 
@@ -181,16 +191,11 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
         <div class="modal-content" style="width: 650px; max-height: 85vh; overflow-y: auto;">
             <button class="close-modal" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
             <h3 style="margin-bottom: 1.5rem; color: var(--warning);"><i class="fa-solid fa-lock"></i> Painel de Administração</h3>
-            
             <div style="background-color: var(--bg-app); border: 1px solid var(--danger); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
-                <h4 style="margin-bottom: 1rem; color: var(--danger); font-size: 0.85rem;"><i class="fa-solid fa-bullhorn"></i> Transmitir Aviso Global (Incidente)</h4>
+                <h4 style="margin-bottom: 1rem; color: var(--danger); font-size: 0.85rem;"><i class="fa-solid fa-bullhorn"></i> Transmitir Aviso Global</h4>
                 <input type="text" id="inputAviso" placeholder="Ex: 🚨 Rompimento massivo em Campinas..." style="width: 100%; padding: 10px; border-radius: 6px; background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border); margin-bottom: 10px;">
-                <div style="display:flex; gap:10px;">
-                    <button class="btn-action" style="background:var(--danger);" onclick="publicarAviso()"><i class="fa-solid fa-broadcast-tower"></i> Publicar Alerta</button>
-                    <button class="btn-action" style="background:var(--bg-hover); color: var(--text-main);" onclick="limparAviso()"><i class="fa-solid fa-trash"></i> Remover</button>
-                </div>
+                <div style="display:flex; gap:10px;"><button class="btn-action" style="background:var(--danger);" onclick="publicarAviso()"><i class="fa-solid fa-broadcast-tower"></i> Publicar</button><button class="btn-action" style="background:var(--bg-hover); color: var(--text-main);" onclick="limparAviso()"><i class="fa-solid fa-trash"></i> Remover</button></div>
             </div>
-
             <div style="display: flex; gap: 15px; margin-bottom: 1.5rem;">
                 <div style="flex: 1; background-color: var(--bg-app); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
                     <h4 style="margin-bottom: 1rem; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-database"></i> Sincronizar Sites</h4>
@@ -203,7 +208,6 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
                     <button class="btn-action" id="btnUploadEscala" style="background-color: var(--success);" onclick="enviarPlanilha('escala')"><i class="fa-solid fa-upload"></i> Upload Escala</button>
                 </div>
             </div>
-
             <h4 style="margin-bottom: 10px; font-size: 0.9rem; color: var(--text-muted);"><i class="fa-solid fa-signal" style="color: var(--success);"></i> Usuários Online</h4>
             <div id="listaOnline" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.5rem; padding: 10px; background: var(--bg-app); border-radius: 8px; border: 1px solid var(--border);">Carregando...</div>
             <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
@@ -220,19 +224,17 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
             <div class="config-group"><label>Seu Nome no Chat</label><input type="text" id="nomeUsuario" readonly style="opacity: 0.6; cursor: not-allowed;"></div>
             <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
             <h4 style="margin-bottom: 1rem; font-size: 0.9rem;">Ajuda & Solicitações</h4>
-            <div class="config-group"><textarea id="textoSolicitacao" rows="3" placeholder="Sugira uma melhoria ou reporte um erro..."></textarea></div>
-            <button class="btn-action" id="btnEnviarSugestao" onclick="enviarSugestaoDireta()"><i class="fa-solid fa-paper-plane"></i> Enviar Solicitação</button>
+            <div class="config-group"><textarea id="textoSolicitacao" rows="3" placeholder="Sugira uma melhoria..."></textarea></div>
+            <button class="btn-action" id="btnEnviarSugestao" onclick="enviarSugestaoDireta()"><i class="fa-solid fa-paper-plane"></i> Enviar</button>
         </div>
     </div>
 
     <script>
         let meuNome = localStorage.getItem('spi_nome');
         let baseAutocomplete = [];
+        let iaMode = false; // VARIAVEL QUE LIGA A INTELIGÊNCIA ARTIFICIAL
 
-        window.onload = () => {
-            if(!meuNome) document.getElementById('welcomeModal').classList.add('active');
-            else iniciarSistema();
-        };
+        window.onload = () => { if(!meuNome) document.getElementById('welcomeModal').classList.add('active'); else iniciarSistema(); };
 
         function salvarNomeEIniciar() {
             const input = document.getElementById('inputWelcomeName').value.trim();
@@ -251,74 +253,64 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
             carregarBaseAutocomplete(); 
         }
 
-        // --- ATUALIZAR HISTÓRICO E AVISO GLOBAL ---
+        // --- FUNÇÃO DO BOTÃO DE IA ---
+        function toggleIAMode() {
+            iaMode = !iaMode;
+            const btn = document.getElementById('btnModeIA');
+            const input = document.getElementById('siglaInput');
+            const chatArea = document.getElementById('chatArea');
+            
+            if(iaMode) {
+                btn.classList.add('active');
+                btn.innerHTML = '<i class="fa-solid fa-robot"></i> <span>Voltar Chat Padrão</span>';
+                input.placeholder = "Cole um alarme ou mude a escala...";
+                input.style.textTransform = "none";
+                chatArea.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Assistente IA</span><div class="message ai-message">⚡ <b>Modo IA Ativado!</b><br><span style="font-size:0.85rem; color:var(--text-muted);">Como posso ajudar a operação hoje? Ex: "Cole um log de erro" ou "Muda o João Silva pra Férias".</span></div></div>`;
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="fa-solid fa-robot"></i> <span>Transformar em Chat IA</span>';
+                input.placeholder = "Ex: SJC, Bauru, João Silva...";
+                input.style.textTransform = "uppercase";
+                chatArea.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message">Retornando ao banco de dados padrão.</div></div>`;
+            }
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
         async function atualizarHistoricoEAlertas() {
             try { 
                 const respHist = await fetch('/historico'); const lista = await respHist.json(); 
                 document.getElementById('historicoContainer').innerHTML = lista.map(i => `<div style="background: var(--bg-app); border: 1px solid var(--border); padding: 10px; border-radius: 8px; border-left: 3px solid var(--primary);"><div style="font-weight: 600; font-size: 0.8rem; margin-bottom:4px;"><span style="color:var(--text-muted);">[${i.usuario}]</span> <span style="color:var(--text-main);">${i.sigla}</span></div><div style="font-size: 0.75rem; color: var(--text-muted);">${i.status} - ${i.tempo}</div></div>`).join(''); 
-                
                 const respAviso = await fetch('/aviso'); const dadosAviso = await respAviso.json();
                 const banner = document.getElementById('globalAlertBanner');
-                if(dadosAviso.aviso) {
-                    document.getElementById('globalAlertText').innerText = dadosAviso.aviso;
-                    banner.style.display = 'block';
-                } else { banner.style.display = 'none'; }
+                if(dadosAviso.aviso) { document.getElementById('globalAlertText').innerText = dadosAviso.aviso; banner.style.display = 'block'; } else { banner.style.display = 'none'; }
             } catch(e) {}
         }
 
-        // --- PUBLICAR AVISOS ADMIN ---
-        async function publicarAviso() {
-            const texto = document.getElementById('inputAviso').value;
-            if(!texto) return alert("Digite um aviso!");
-            await fetch('/admin/aviso', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: texto}) });
-            alert("Aviso publicado para todos!"); document.getElementById('inputAviso').value = ""; atualizarHistoricoEAlertas();
-        }
-        async function limparAviso() {
-            await fetch('/admin/aviso', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: ""}) });
-            alert("Aviso removido!"); atualizarHistoricoEAlertas();
-        }
+        async function publicarAviso() { const texto = document.getElementById('inputAviso').value; if(!texto) return alert("Digite um aviso!"); await fetch('/admin/aviso', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: texto}) }); alert("Aviso publicado para todos!"); document.getElementById('inputAviso').value = ""; atualizarHistoricoEAlertas(); }
+        async function limparAviso() { await fetch('/admin/aviso', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto: ""}) }); alert("Aviso removido!"); atualizarHistoricoEAlertas(); }
 
-        // --- VISÃO GERAL (PASSAGEM DE TURNO) ---
         async function abrirVisaoGeral() {
             fecharModais(); document.getElementById('visaoModal').classList.add('active');
-            const container = document.getElementById('visaoGeralContainer');
-            container.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mapeando técnicos do estado...';
+            const container = document.getElementById('visaoGeralContainer'); container.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mapeando técnicos do estado...';
             try {
-                const res = await fetch('/visao_geral'); const dados = await res.json();
-                let html = '';
+                const res = await fetch('/visao_geral'); const dados = await res.json(); let html = '';
                 for (const [base, tecnicos] of Object.entries(dados)) {
-                    html += `<h4 style="color:var(--warning); margin-top:20px; border-bottom:1px solid var(--border); padding-bottom:5px;">📍 ${base}</h4>`;
-                    html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">`;
-                    tecnicos.forEach(t => {
-                        html += `<div style="background:var(--bg-app); padding:10px; border-radius:6px; border:1px solid var(--border); font-size:0.8rem;">
-                            <b style="color:white; font-size:0.85rem;">👨‍🔧 ${t.tecnico}</b><br>
-                            ⏰ ${t.horario} | ⚙️ ${t.segmento}<br>
-                            📞 <a href='tel:${t.contato}' style='color:var(--primary); text-decoration:none;'>${t.contato}</a>
-                        </div>`;
-                    });
+                    html += `<h4 style="color:var(--warning); margin-top:20px; border-bottom:1px solid var(--border); padding-bottom:5px;">📍 ${base}</h4><div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">`;
+                    tecnicos.forEach(t => { html += `<div style="background:var(--bg-app); padding:10px; border-radius:6px; border:1px solid var(--border); font-size:0.8rem;"><b style="color:white; font-size:0.85rem;">👨‍🔧 ${t.tecnico}</b><br>⏰ ${t.horario} | ⚙️ ${t.segmento}<br>📞 <a href='tel:${t.contato}' style='color:var(--primary); text-decoration:none;'>${t.contato}</a></div>`; });
                     html += `</div>`;
                 }
-                if(html === '') html = '<p>Nenhum plantonista localizado para hoje.</p>';
-                container.innerHTML = html;
-            } catch(e) { container.innerHTML = 'Erro ao carregar dados do servidor.'; }
+                if(html === '') html = '<p>Nenhum plantonista localizado para hoje.</p>'; container.innerHTML = html;
+            } catch(e) { container.innerHTML = 'Erro ao carregar dados.'; }
         }
 
-        // --- AUTOCOMPLETE E RESTO ---
         async function carregarBaseAutocomplete() { try { const resp = await fetch('/autocomplete'); baseAutocomplete = await resp.json(); } catch(e) {} }
         const siglaInput = document.getElementById('siglaInput'); const autocompleteList = document.getElementById('autocompleteContainer');
         siglaInput.addEventListener('input', function() {
+            if(iaMode) { autocompleteList.style.display = 'none'; return; }
             let txt = this.value.toUpperCase(); autocompleteList.innerHTML = '';
             if (txt.length < 2) { autocompleteList.style.display = 'none'; return; }
             const filtrados = baseAutocomplete.filter(i => i.termo.includes(txt) || i.detalhe.toUpperCase().includes(txt)).slice(0, 8);
-            if (filtrados.length > 0) {
-                autocompleteList.style.display = 'flex';
-                filtrados.forEach(i => {
-                    const div = document.createElement('div'); div.className = 'autocomplete-item';
-                    div.innerHTML = `<div><span class="autocomplete-termo">${i.termo}</span> - <span style="color:var(--text-muted);">${i.detalhe}</span></div><div style="font-size: 0.7rem; background: var(--bg-hover); padding: 2px 6px; border-radius: 4px;">${i.tipo}</div>`;
-                    div.onclick = function() { siglaInput.value = i.termo; autocompleteList.style.display = 'none'; realizarBusca(); };
-                    autocompleteList.appendChild(div);
-                });
-            } else { autocompleteList.style.display = 'none'; }
+            if (filtrados.length > 0) { autocompleteList.style.display = 'flex'; filtrados.forEach(i => { const div = document.createElement('div'); div.className = 'autocomplete-item'; div.innerHTML = `<div><span class="autocomplete-termo">${i.termo}</span> - <span style="color:var(--text-muted);">${i.detalhe}</span></div><div style="font-size: 0.7rem; background: var(--bg-hover); padding: 2px 6px; border-radius: 4px;">${i.tipo}</div>`; div.onclick = function() { siglaInput.value = i.termo; autocompleteList.style.display = 'none'; realizarBusca(); }; autocompleteList.appendChild(div); }); } else { autocompleteList.style.display = 'none'; }
         });
         document.addEventListener('click', function(e) { if (e.target !== siglaInput) autocompleteList.style.display = 'none'; });
 
@@ -335,49 +327,43 @@ Observação:    </textarea><button class="btn-copy" onclick="copiarMask('txtAtu
         function copiarMask(id, btn) { document.getElementById(id).select(); navigator.clipboard.writeText(document.getElementById(id).value).then(() => { const txtOri = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado!'; btn.style.background = "var(--success)"; btn.style.color = "white"; setTimeout(() => { btn.innerHTML = txtOri; btn.style.background = "var(--bg-hover)"; btn.style.color = "var(--text-main)"; }, 2000); }); }
 
         async function realizarBusca() {
-            const input = document.getElementById('siglaInput'); const s = input.value.trim().toUpperCase(); const chat = document.getElementById('chatArea');
+            const input = document.getElementById('siglaInput'); 
+            let s = input.value.trim(); 
+            const chat = document.getElementById('chatArea');
             if(!s) return;
+
+            if(!iaMode) s = s.toUpperCase();
+            
             chat.innerHTML += `<div class="message-wrapper user"><span class="message-sender">${meuNome}</span><div class="message">${s}</div></div>`;
             input.value = ''; autocompleteList.style.display = 'none'; chat.scrollTop = chat.scrollHeight;
-            const id = "msg-" + Date.now(); chat.innerHTML += `<div class="message-wrapper system" id="${id}"><div class="message"><i class="fa-solid fa-spinner fa-spin"></i> Buscando...</div></div>`; chat.scrollTop = chat.scrollHeight;
+            const id = "msg-" + Date.now(); chat.innerHTML += `<div class="message-wrapper system" id="${id}"><div class="message"><i class="fa-solid fa-spinner fa-spin"></i> ${iaMode ? 'Analisando com Inteligência Artificial...' : 'Buscando no banco de dados...'}</div></div>`; chat.scrollTop = chat.scrollHeight;
             
             const hoje = new Date(); const d = `${hoje.getDate()}/${hoje.getMonth() + 1}`;
+            const rotaEndpoint = iaMode ? '/chat_ia' : '/chat';
+
             try {
-                const resp = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: s, data: d, nome: meuNome }) });
+                const resp = await fetch(rotaEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: s, data: d, nome: meuNome }) });
                 const dados = await resp.json(); document.getElementById(id).remove();
-                let txt = `<div>${dados.response.cabecalho || dados.response.erro}</div>`;
-                if (dados.response.encontrado && !dados.response.erro) {
-                    const iCol = dados.response.infra && dados.response.infra.length > 0 ? dados.response.infra.join('') : '<p style="font-size:0.8rem; color:var(--text-muted); text-align:center;">Sem cobertura</p>';
-                    const tCol = dados.response.tx && dados.response.tx.length > 0 ? dados.response.tx.join('') : '<p style="font-size:0.8rem; color:var(--text-muted); text-align:center;">Sem cobertura</p>';
-                    txt += `<div style="display: flex; gap: 15px; margin-top: 15px;"><div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);"><h4 style="color: var(--primary); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-server"></i> INFRA</h4><div style="font-size: 0.85rem;">${iCol}</div></div><div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);"><h4 style="color: var(--warning); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-satellite-dish"></i> TX</h4><div style="font-size: 0.85rem;">${tCol}</div></div></div>`;
+                
+                if(iaMode) {
+                    chat.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Assistente IA</span><div class="message ai-message" style="width:100%; max-width:100%;">${dados.texto}</div></div>`;
+                } else {
+                    let txt = `<div>${dados.response.cabecalho || dados.response.erro}</div>`;
+                    if (dados.response.encontrado && !dados.response.erro) {
+                        const iCol = dados.response.infra && dados.response.infra.length > 0 ? dados.response.infra.join('') : '<p style="font-size:0.8rem; color:var(--text-muted); text-align:center;">Sem cobertura</p>';
+                        const tCol = dados.response.tx && dados.response.tx.length > 0 ? dados.response.tx.join('') : '<p style="font-size:0.8rem; color:var(--text-muted); text-align:center;">Sem cobertura</p>';
+                        txt += `<div style="display: flex; gap: 15px; margin-top: 15px;"><div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);"><h4 style="color: var(--primary); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-server"></i> INFRA</h4><div style="font-size: 0.85rem;">${iCol}</div></div><div style="flex: 1; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 8px; border: 1px solid var(--border);"><h4 style="color: var(--warning); margin-bottom: 10px; font-size: 0.85rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; text-align:center;"><i class="fa-solid fa-satellite-dish"></i> TX</h4><div style="font-size: 0.85rem;">${tCol}</div></div></div>`;
+                    }
+                    chat.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message" style="width:100%; max-width:100%;">${txt}</div></div>`;
                 }
-                chat.innerHTML += `<div class="message-wrapper system"><span class="message-sender">Sistema SPI</span><div class="message" style="width:100%; max-width:100%;">${txt}</div></div>`;
                 chat.scrollTop = chat.scrollHeight; atualizarHistoricoEAlertas();
-            } catch (e) { document.getElementById(id).remove(); chat.innerHTML += `<div class="message-wrapper system"><div class="message" style="color:var(--warning)">Erro de servidor.</div></div>`; }
+            } catch (e) { document.getElementById(id).remove(); chat.innerHTML += `<div class="message-wrapper system"><div class="message" style="color:var(--warning)">Erro de servidor ou IA Indisponível.</div></div>`; }
         }
         document.getElementById('siglaInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') realizarBusca(); });
 
-        async function fazerLoginAdmin() {
-            const u = document.getElementById('usuarioAdmin').value; const p = document.getElementById('senhaAdmin').value; const btn = document.getElementById('btnLoginAdmin');
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>...'; btn.disabled = true;
-            try { const resp = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: u, senha: p }) }); if (resp.ok) { fecharModais(); document.getElementById('adminModal').classList.add('active'); carregarSugestoesDoBanco(); carregarUsuariosOnline(); } else { alert("Incorreto!"); } } catch (e) {} finally { btn.innerHTML = 'Entrar no Painel'; btn.disabled = false; }
-        }
-
+        async function fazerLoginAdmin() { const u = document.getElementById('usuarioAdmin').value; const p = document.getElementById('senhaAdmin').value; const btn = document.getElementById('btnLoginAdmin'); btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>...'; btn.disabled = true; try { const resp = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: u, senha: p }) }); if (resp.ok) { fecharModais(); document.getElementById('adminModal').classList.add('active'); carregarSugestoesDoBanco(); carregarUsuariosOnline(); } else { alert("Incorreto!"); } } catch (e) {} finally { btn.innerHTML = 'Entrar no Painel'; btn.disabled = false; } }
         async function carregarUsuariosOnline() { try { const r = await fetch('/admin/online'); const users = await r.json(); const c = document.getElementById('listaOnline'); if(users.length === 0) { c.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Ninguém online</span>'; return; } c.innerHTML = users.map(u => `<span style="background: var(--success); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; display:flex; align-items:center; gap:5px;"><i class="fa-solid fa-circle" style="font-size:0.5rem;"></i> ${u}</span>`).join(''); } catch(e) {} }
-        
-        async function enviarPlanilha(tipo) {
-            const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala'; const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala'; const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala'; const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala';
-            const fileInput = document.getElementById(inputId); const btn = document.getElementById(btnId);
-            if (fileInput.files.length === 0) return alert("Selecione um arquivo!");
-            const formData = new FormData(); formData.append('planilha', fileInput.files[0]);
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...'; btn.disabled = true; btn.style.opacity = '0.7';
-            try {
-                const resp = await fetch(rota, { method: 'POST', body: formData }); const dados = await resp.json(); 
-                if (resp.ok) { btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = ""; setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000); } 
-                else { throw new Error(dados.erro || "Erro interno do servidor"); }
-            } catch (e) { alert("Erro ao enviar: \n\n" + e.message); btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; }
-        }
-
+        async function enviarPlanilha(tipo) { const inputId = tipo === 'sites' ? 'arquivoSites' : 'arquivoEscala'; const btnId = tipo === 'sites' ? 'btnUploadSites' : 'btnUploadEscala'; const rota = tipo === 'sites' ? '/upload_sites' : '/upload_escala'; const labelOriginal = tipo === 'sites' ? 'Upload Sites' : 'Upload Escala'; const fileInput = document.getElementById(inputId); const btn = document.getElementById(btnId); if (fileInput.files.length === 0) return alert("Selecione um arquivo!"); const formData = new FormData(); formData.append('planilha', fileInput.files[0]); btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...'; btn.disabled = true; btn.style.opacity = '0.7'; try { const resp = await fetch(rota, { method: 'POST', body: formData }); const dados = await resp.json(); if (resp.ok) { btn.style.backgroundColor = "var(--success)"; btn.innerHTML = '<i class="fa-solid fa-check"></i> OK, Sincronizado!'; fileInput.value = ""; setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-upload"></i> ${labelOriginal}`; btn.disabled = false; btn.style.opacity = '1'; if(tipo === 'sites') btn.style.backgroundColor = "var(--primary)"; }, 3000); } else { throw new Error(dados.erro || "Erro interno do servidor"); } } catch (e) { alert("Erro ao enviar: \n\n" + e.message); btn.innerHTML = labelOriginal; btn.disabled = false; btn.style.opacity = '1'; } }
         async function enviarSugestaoDireta() { const txt = document.getElementById('textoSolicitacao').value; const btn = document.getElementById('btnEnviarSugestao'); if(!txt) return; btn.innerHTML = 'Enviando...'; btn.disabled=true; await fetch('/sugestoes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: meuNome, texto: txt }) }); document.getElementById('textoSolicitacao').value = ""; btn.innerHTML = 'Enviado!'; btn.style.backgroundColor = "var(--success)"; setTimeout(() => { btn.innerHTML = 'Enviar Solicitação'; btn.style.backgroundColor = "var(--primary)"; btn.disabled=false; }, 3000); }
         async function carregarSugestoesDoBanco() { const lst = document.getElementById('listaSugestoes'); lst.innerHTML = "Carregando..."; const resp = await fetch('/admin/listar-sugestoes'); const s = await resp.json(); if(s.length === 0) { lst.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Caixa vazia</span>'; return; } lst.innerHTML = s.map(x => `<div style="background:var(--bg-panel); padding:10px; border-left:3px solid var(--warning); border-radius:6px;"><b style="color:var(--primary); font-size:0.85rem;">${x.usuario}</b> <span style="font-size:0.75rem; color:var(--text-muted); margin-left:5px;">${x.data}</span><p style="margin-top:5px; font-size:0.85rem;">${x.texto}</p></div>`).join(''); }
     </script>
