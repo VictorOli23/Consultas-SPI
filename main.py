@@ -11,7 +11,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 init_db()
 
-# --- CONFIGURAÇÃO DA IA DO GOOGLE COM A SUA CHAVE ---
+# --- CONFIGURAÇÃO DA IA DO GOOGLE ---
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyBXelMqwW9XVbWTa_Bfx54Ns7NqPlJajAw")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
@@ -27,7 +27,7 @@ def chat():
     resultado = query_data(dados.get("message"), dados.get("data"), dados.get("nome", "Anônimo"))
     return jsonify({"response": resultado})
 
-# --- ROTA DE INTELIGÊNCIA ARTIFICIAL (ANÁLISE DE ALARMES E BANCO) ---
+# --- ROTA DE INTELIGÊNCIA ARTIFICIAL (À PROVA DE ERRO 404) ---
 @app.route("/chat_ia", methods=["POST"])
 def chat_ia():
     dados = request.json
@@ -37,8 +37,23 @@ def chat_ia():
         return jsonify({"texto": "A chave da API da IA não foi configurada."})
 
     try:
-        # --- A CORREÇÃO ESTÁ AQUI: Atualizado para o modelo gemini-1.5-flash ---
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 1. PERGUNTA AO GOOGLE QUAIS MODELOS SUA CHAVE PODE ACESSAR
+        modelos_disponiveis = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        if not modelos_disponiveis:
+            return jsonify({"texto": "Erro: A sua chave de API do Google não tem permissão para nenhum modelo de texto."})
+        
+        # 2. ESCOLHE AUTOMATICAMENTE O MELHOR MODELO DA LISTA
+        modelo_escolhido = modelos_disponiveis[0] # Pega o primeiro como garantia
+        for m in modelos_disponiveis:
+            if 'gemini-1.5-flash' in m:
+                modelo_escolhido = m
+                break
+            elif 'gemini-1.0-pro' in m:
+                modelo_escolhido = m
+        
+        # 3. INICIA A IA COM O MODELO QUE EXISTE
+        model = genai.GenerativeModel(modelo_escolhido)
         
         prompt_sistema = """Você é um Assistente Sênior de NOC (Network Operations Center) especializado em Telecom e Infraestrutura.
         Sua missão é ajudar analistas a traduzirem logs complexos e acionarem as equipes de campo. Use formatação HTML <b> para negrito e <ul><li> para listas.
@@ -68,7 +83,7 @@ def chat_ia():
             texto_limpo = texto_ia.replace(comando, "").strip()
             
             partes = comando.replace("[", "").replace("]", "").split("|")
-            if len(partes) == 3:
+            if len(partes) >= 3:
                 nome_tec = partes[1]
                 novo_status = partes[2]
                 resultado_db = atualizar_tecnico_dinamico(nome_tec, novo_status)
@@ -81,7 +96,7 @@ def chat_ia():
         return jsonify({"texto": texto_html})
         
     except Exception as e:
-        return jsonify({"texto": f"Ocorreu um erro ao consultar a IA: {str(e)}"})
+        return jsonify({"texto": f"Ocorreu um erro ao consultar a IA. Detalhe técnico: {str(e)}"})
 
 @app.route("/autocomplete", methods=["GET"])
 def autocomplete(): return jsonify(get_autocomplete_data())
