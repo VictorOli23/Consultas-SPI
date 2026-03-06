@@ -11,8 +11,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 init_db()
 
-# --- CONFIGURAÇÃO DA IA DO GOOGLE ---
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyBXelMqwW9XVbWTa_Bfx54Ns7NqPlJajAw")
+# --- CONFIGURAÇÃO DA IA DO GOOGLE COM A SUA NOVA CHAVE ---
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyC6FYS0l0kmtXft-ygV_RPQcSVZa_AsAcw")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
@@ -27,7 +27,7 @@ def chat():
     resultado = query_data(dados.get("message"), dados.get("data"), dados.get("nome", "Anônimo"))
     return jsonify({"response": resultado})
 
-# --- ROTA DE INTELIGÊNCIA ARTIFICIAL (AUTO-DISCOVERY DE MODELOS) ---
+# --- ROTA DE INTELIGÊNCIA ARTIFICIAL ATUALIZADA ---
 @app.route("/chat_ia", methods=["POST"])
 def chat_ia():
     dados = request.json
@@ -41,24 +41,22 @@ def chat_ia():
         modelos_disponiveis = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                # Remove o prefixo 'models/' se vier, para evitar bug de leitura
                 nome_limpo = m.name.replace('models/', '')
                 modelos_disponiveis.append(nome_limpo)
         
         if not modelos_disponiveis:
             return jsonify({"texto": "Erro: A sua chave de API do Google é válida, mas não tem permissão para usar nenhum modelo de texto no momento."})
         
-        # 2. ESCOLHE O MELHOR MODELO DA LISTA AUTOMATICAMENTE
-        modelo_escolhido = modelos_disponiveis[0] # Pega o primeiro por segurança
+        # 2. ESCOLHE O MELHOR MODELO (Com prioridade para o Flash Latest da sua nova chave)
+        modelo_escolhido = modelos_disponiveis[0] 
         
-        # Ordem de preferência de inteligência do Google
-        preferencias = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
+        preferencias = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-flash-latest', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
         for pref in preferencias:
             if pref in modelos_disponiveis:
                 modelo_escolhido = pref
                 break
         
-        # 3. INSTANCIA O MODELO GARANTIDO QUE EXISTE NA SUA CONTA
+        # 3. INSTANCIA O MODELO
         model = genai.GenerativeModel(modelo_escolhido)
         
         prompt_sistema = """Você é um Assistente Sênior de NOC (Network Operations Center) especializado em Telecom e Infraestrutura.
@@ -82,14 +80,14 @@ def chat_ia():
         response = model.generate_content(prompt_sistema + "\n\nUsuário diz: " + mensagem_usuario)
         texto_ia = response.text
         
-        # Função secreta de alterar a escala
+        # Interceptador de comando para alterar a escala
         if "[UPDATE_DB|" in texto_ia:
             linhas = texto_ia.split('\n')
             comando = [l for l in linhas if "[UPDATE_DB|" in l][0]
             texto_limpo = texto_ia.replace(comando, "").strip()
             
             partes = comando.replace("[", "").replace("]", "").split("|")
-            if len(partes) == 3:
+            if len(partes) >= 3:
                 nome_tec = partes[1]
                 novo_status = partes[2]
                 resultado_db = atualizar_tecnico_dinamico(nome_tec, novo_status)
@@ -102,7 +100,6 @@ def chat_ia():
         return jsonify({"texto": texto_html})
         
     except Exception as e:
-        # SE DER ERRO, VAI IMPRIMIR A LISTA DE MODELOS DA SUA CHAVE NA TELA PRA GENTE VER!
         debug_info = f"<b>Falha de conexão com a IA.</b><br>Erro técnico: {str(e)}<br><br><b>Modelos liberados na sua chave do Google:</b><br>{', '.join(modelos_disponiveis) if 'modelos_disponiveis' in locals() else 'Nenhum modelo lido'}<br><br><i>A IA tentou usar o modelo: {modelo_escolhido if 'modelo_escolhido' in locals() else 'Desconhecido'}</i>"
         return jsonify({"texto": debug_info})
 
